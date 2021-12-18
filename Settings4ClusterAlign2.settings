@@ -1,0 +1,54 @@
+﻿<?xml version='1.0' encoding='utf-8'?>
+<SettingsFile xmlns="http://schemas.microsoft.com/VisualStudio/2004/01/settings" CurrentProfile="(Default)" GeneratedClassNamespace="ClusterAlign" GeneratedClassName="Settings4ClusterAlign2">
+  <Profiles />
+  <Settings>
+    <Setting Name="DataFileName" Type="System.String" Scope="User">
+      <Value Profile="(Default)">BB.tif</Value>
+    </Setting>
+    <Setting Name="TiltFileName" Type="System.String" Scope="User">
+      <Value Profile="(Default)">BB.rawtlt</Value>
+    </Setting>
+    <Setting Name="xisRotation" Type="System.Boolean" Scope="User">
+      <Value Profile="(Default)">True</Value>
+    </Setting>
+    <Setting Name="coswindow" Type="System.Boolean" Scope="User">
+      <Value Profile="(Default)">False</Value>
+    </Setting>
+    <Setting Name="cluster_size" Type="System.Int32" Scope="User">
+      <Value Profile="(Default)">300</Value>
+    </Setting>
+    <Setting Name="Path" Type="System.String" Scope="User">
+      <Value Profile="(Default)">C:\\Users\\shaharseifer\\Documents\\analyze\\</Value>
+    </Setting>
+    <Setting Name="fidsize" Type="System.Single" Scope="User">
+      <Value Profile="(Default)">7.5</Value>
+    </Setting>
+    <Setting Name="NfidMax" Type="System.Int32" Scope="User">
+      <Value Profile="(Default)">200</Value>
+    </Setting>
+    <Setting Name="N_minimum_tracked_fiducials" Type="System.Int32" Scope="User">
+      <Value Profile="(Default)">4</Value>
+    </Setting>
+    <Setting Name="PreAlignmentTol" Type="System.Double" Scope="User">
+      <Value Profile="(Default)">4</Value>
+    </Setting>
+    <Setting Name="ncenter" Type="System.Int32" Scope="User">
+      <Value Profile="(Default)">-1</Value>
+    </Setting>
+    <Setting Name="ForceFill" Type="System.Boolean" Scope="User">
+      <Value Profile="(Default)">False</Value>
+    </Setting>
+    <Setting Name="fiducials_bright" Type="System.Boolean" Scope="User">
+      <Value Profile="(Default)">False</Value>
+    </Setting>
+    <Setting Name="Ncluster" Type="System.Int32" Scope="User">
+      <Value Profile="(Default)">7</Value>
+    </Setting>
+    <Setting Name="TolFidCenter" Type="System.Int32" Scope="User">
+      <Value Profile="(Default)">70</Value>
+    </Setting>
+    <Setting Name="TolFidSize" Type="System.Int32" Scope="User">
+      <Value Profile="(Default)">30</Value>
+    </Setting>
+  </Settings>
+</SettingsFile>

@@ -1,6 +1,6 @@
 function clusteralign_astra_reconstruct(cosine_sample,phi_deg,psi_deg,Chosen_Filename_ali,Chosen_Filename_angles,varargin)
 %Load aligned mrc tomogram and reconstruct 3D by SIRT3D in Astra toolbox
-%Written by Shahar Seifer, Weizmann Institute of Science, 2022
+%Copyright (C) 2022 - Written by Shahar Seifer, Weizmann Institute of Science - GPLv3 license
 %Requires ASTRA Toolbox, https://www.astra-toolbox.com/downloads/index.html#
 %Requires @MRCImage library from MatTomo, PEET project: https://bio3d.colorado.edu/imod/matlab.html
 %varagin includes: Chosen_Filename_fiterr,bin,nZ

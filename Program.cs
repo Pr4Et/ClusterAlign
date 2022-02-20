@@ -1,5 +1,5 @@
-﻿//ClusterAlign main engine: Find and track fiducials in tomograms
-//Copyright (C) 2021 by Shahar Seifer, Elabum lab, Weizmann Institute of Science
+﻿//ClusterAlign main engine: Find and track fiducials in images of a tilt series
+//Copyright (C) 2021-2022 by Shahar Seifer, Elabum lab, Weizmann Institute of Science
 /*
     This program is free software: you can redistribute it and/or modify
     it under the terms of the GNU General Public License as published by
@@ -16,6 +16,7 @@
 */
 
 using System;
+using System.Text;
 using System.IO;
 using Emgu.CV;
 using Emgu.Util;
@@ -25,29 +26,29 @@ using Emgu.CV.CvEnum;
 using System.Drawing;
 using System.Threading;
 using Emgu.CV.Features2D;
-//using System.Windows.Forms;
-
-//using System.Runtime.InteropServices;
-
+using System.Collections.Generic;
 
 namespace ClusterAlign
 {
     public class Program
     {
+        static String Version_information = "ClusterAlign (ver 2021-Feb-20).";
         static bool xisRotation = ClusterAlign.Settings4ClusterAlign2.Default.xisRotation;
         static svector[] match_tolerance;
         static int cluster_size = ClusterAlign.Settings4ClusterAlign2.Default.cluster_size; //maximum x/y distance between related fiducials in a single cluster
         static bool coswindow = ClusterAlign.Settings4ClusterAlign2.Default.coswindow; //coswindow: false- simple data, true- window already scalled by cos(tiltangle)= Hoppe sampling
         static double tolfactor_center = 0.01*ClusterAlign.Settings4ClusterAlign2.Default.TolFidCenter;// X fidsize= error in center location of fiducial
-        //static double tolfactor_stability = 0.05; // X Ncols= max movements due to misalignment of motor
-        //static double tolfactor_travel = 0.35; //X Nclos = maximum travel distance of fiducials after compensation of cos(tiltangle) 
         static float tolfactor_blur =1F; //X fidsize = Gaussian blurring size, scalable further according to x or y projection
         static float fidsize_ratiovar = 0.01F*ClusterAlign.Settings4ClusterAlign2.Default.TolFidSize;  //ratio of variance to total size of fiducials
-        static float tolfactor_low_pass_size=0.5F;//X cluster_size = Gaussian low pass filter size of matrix 
         static double[] z_values;
         static double[] tiltangles;
         static svector[,] svectors;
         static int[,] svectors_radius;
+        static bool ignore_collisions = false;
+        static bool cluster_visualize = false; //(Shows example of cluster visually at the end of the first iteration, depending on selected n1n1visualize)
+        static int n1visualize = 336; ///336 -> check in advance a suitable numbers from fidn[ncenter,:] 
+        static int[,,] visualize = new int[100, cluster_visualize? 50000:1, 2];//only for cluster visualization
+
         public static void MyMain() 
         {
             string path = ClusterAlign.Settings4ClusterAlign2.Default.Path; // "C:\\Users\\shaharseifer\\Documents\\analyze\\";
@@ -64,16 +65,23 @@ namespace ClusterAlign
             string NogapsFidFileName = path + slash + Path.GetFileNameWithoutExtension(FileName) + ".nogaps.fid.txt";
             string out_filename = path + slash + Path.GetFileNameWithoutExtension(FileName) + ".ali.mrc";
             string showcluster_filename = path + slash + Path.GetFileNameWithoutExtension(FileName) + ".clusters.mrc";
+            string report_filename = path + slash + Path.GetFileNameWithoutExtension(FileName) + ".output.txt";
+            string basefilename = path + slash + Path.GetFileNameWithoutExtension(FileName);
+            bool auto_fid_size = false;
 
             float fidsize = ClusterAlign.Settings4ClusterAlign2.Default.fidsize; //approx. fiducial size in pixels
+            if (fidsize<=0)
+            {
+                auto_fid_size = true; //fidsize and masks will be updated before second iteration
+                fidsize = 7; //tentative number for first iteration
+            }
             int NfidMax = ClusterAlign.Settings4ClusterAlign2.Default.NfidMax; //maximum number of fiducials acquired in frame
             int N_minimum_tracked_fiducials_percent = ClusterAlign.Settings4ClusterAlign2.Default.N_minimum_tracked_fiducials; //percent of tracking useful for holding a fiducial
             double CorrectAngle = 0;
-            double PreAlignmentTolx=ClusterAlign.Settings4ClusterAlign2.Default.PreAlignmentTol*(ClusterAlign.Settings4ClusterAlign2.Default.xisRotation? 0.3:1);
-            double PreAlignmentToly = ClusterAlign.Settings4ClusterAlign2.Default.PreAlignmentTol * (ClusterAlign.Settings4ClusterAlign2.Default.xisRotation ? 1 : 0.3);
+            double PreAlignmentTolx=ClusterAlign.Settings4ClusterAlign2.Default.PreAlignmentTol*(ClusterAlign.Settings4ClusterAlign2.Default.xisRotation? 1:1);
+            double PreAlignmentToly = ClusterAlign.Settings4ClusterAlign2.Default.PreAlignmentTol * (ClusterAlign.Settings4ClusterAlign2.Default.xisRotation ? 1 : 1);
             int ncenter = ClusterAlign.Settings4ClusterAlign2.Default.ncenter;// best slice to see fiducials. if -1 then choose later:Nslices / 2
             float ThresholdG;//Threshold of "radial divergence" in gray map expected of fiducial
-            float ThresholdD;//Threshold of brightness/darkness expected of fiducial
             int HKerSize = Convert.ToInt32(MathF.Ceiling(0.5F * fidsize * (1 + fidsize_ratiovar))); //Half kernel size for convolution in image processing
             int KerSize = 2 * HKerSize + 1;
             int HKerSizeDilate = (int)(HKerSize / 2);
@@ -89,13 +97,12 @@ namespace ClusterAlign
             int KerSize2ndOut = 2 * HKerSize2ndOut + 1;
             double minVal = 0;
             double maxVal = 0;
-            const int exclude_radius = 12;
+            int exclude_radius = Math.Max(12, (int)(fidsize*1.2));
             System.Drawing.Point locationh = new System.Drawing.Point(0, 0);
             System.Drawing.Point locationl = new System.Drawing.Point(0, 0);
             bool fiducials_bright = ClusterAlign.Settings4ClusterAlign2.Default.fiducials_bright; //depends on the image B/D field. Fiducials are dark in bright mode so write false.
             const bool divergence_bright = true; //always true
             //int seedof3 =1 ; //if =1: seed of match is 3 vector match, otherwise 2 vector match.
-            int seedof4 = 1; //if =1: seed of match is 4 vector match, otherwise 2 vector match.
             string[] tiltlines=null;
             bool isMRCfile=true;
             bool isAttentionRequest = false;
@@ -109,18 +116,27 @@ namespace ClusterAlign
             double[,] Bfinal;
             double[] Dx_vect;
             double[] Dy_vect;
+            double report_phi = 0;
+            double report_psi = 0;
 
             Console.WriteLine("");
-            Console.WriteLine("ClusterAlign (ver 2021-DEC-18). Written by Shahar Seifer, Elbaum lab, Weizmann Institute of Science.");
+            Console.WriteLine(Version_information);
+            Console.WriteLine("Written by Shahar Seifer, Elbaum lab, Weizmann Institute of Science.");
             Console.WriteLine("Note: GNU General Public License");
 
+            System.IO.FileStream reportoutfile = File.Create(report_filename);
+            var reportfobj = new StreamWriter(reportoutfile, System.Text.Encoding.UTF8);
+            reportfobj.WriteLine(Version_information);
+            reportfobj.WriteLine("Tilt-series file: " + FileName);
+
+            string rawtltFilename = @path + slash + ClusterAlign.Settings4ClusterAlign2.Default.TiltFileName;
             try
             {
                tiltlines = File.ReadAllLines(@path + slash + ClusterAlign.Settings4ClusterAlign2.Default.TiltFileName);  // datasetname.rawtlt
             }
             catch
             {
-                Console.WriteLine("The tilt file could not be found, check file name.");
+                Console.WriteLine("## The tilt file could not be found, check file name. ##");
                 System.Environment.Exit(0);
             }
             tiltangles = new double[tiltlines.Length];
@@ -143,19 +159,28 @@ namespace ClusterAlign
                 slices = myMrcStack.FOpen(FileName);
                 Nslices = slices.Length;
                 isMRCfile = true;
-                //for (nslice = 0; nslice < Nslices; nslice++)
-                //{
-                //slices[nslice] = CvInvoke.CvArrToMat(myMrcStack.slices[nslice].Mat.DataPointer, false, true, 0); //pointer copy from other slices[]. copyData = false, bool allowND (2D mat)= true, int coiMode = 0
-                //}
             }
             else
             {
                 System.Environment.Exit(0);
             }
 
-            int[,] fidx = new int[Nslices, NfidMax]; //was [Nslices,NFid[ncenter]]
-            int[,] fidy = new int[Nslices, NfidMax]; //was [Nslices,NFid[ncenter]]
-            int[,] fidn = new int[Nslices, NfidMax]; //was [Nslices,NFid[ncenter]]
+            if (Nslices!= tiltlines.Length)
+            {
+                if (Nslices> tiltlines.Length)
+                {
+                    Nslices = tiltlines.Length;
+                    Console.WriteLine("## Tilt-angle file not full, using part of the tilt-series. ##");
+                }
+                else
+                {
+                    Console.WriteLine("Too many lines in the tilt-angle file, using part of the list.");
+                }
+            }
+
+            int[,] fidx = new int[Nslices, NfidMax]; 
+            int[,] fidy = new int[Nslices, NfidMax]; 
+            int[,] fidn = new int[Nslices, NfidMax]; 
             for (nslice=0; nslice<Nslices; nslice++ )
             {
                 for (int n=0; n<NfidMax; n++)
@@ -179,11 +204,9 @@ namespace ClusterAlign
                     else
                     {
                         isAttentionRequest = true;
-                        //for (nslice = 0; nslice < Nslices; nslice++)
-                        //{
-                        //    CvInvoke.Flip(Attentionslices[nslice], Attentionslices[nslice], FlipType.Vertical);//since it is TIF file, to match mrc and our coordinates
-                        //}
-                    }
+                        reportfobj.WriteLine("Using attention file.");
+
+                     }
                 }
                 catch
                 {
@@ -198,6 +221,7 @@ namespace ClusterAlign
                     readIMODfidModel(ref fidx, ref fidy, ref fidn, ref fid_count, ClusterAlign.Window1.loadfidFile);
                     isfidRequest = true;
                     attention_size = 10;
+                    reportfobj.WriteLine("Imported fiducial file: "+ ClusterAlign.Window1.loadfidFile);
                 }
                 catch
                 {
@@ -227,7 +251,6 @@ namespace ClusterAlign
 
             Mat slice_mat = new Mat(Nrows, Ncols, DepthType.Cv32F, 1);
             Mat Attention_slice_mat = new Mat(Nrows, Ncols, DepthType.Cv32F, 1);
-            //Mat slice_mat_16U = new Mat(Nrows, Ncols, DepthType.Cv16U, 1);
             Mat matbuffer = new Mat(Nrows, Ncols, DepthType.Cv32F, 1);
             Mat matbuffer2 = new Mat(Nrows, Ncols, DepthType.Cv32F, 1);
             Mat matbuffer0 = new Mat(Nrows, Ncols, DepthType.Cv32F, 1);
@@ -260,7 +283,6 @@ namespace ClusterAlign
             IntPtr kerdiag1_ptr = new IntPtr();
             IntPtr kerdiag2_ptr = new IntPtr();
             IntPtr keradial_ptr = new IntPtr();
-            //IntPtr kmask_ptr = new IntPtr();
             kerx_ptr = CvInvoke.cvCreateMat(KerSize, KerSize, DepthType.Cv32F);
             kery_ptr = CvInvoke.cvCreateMat(KerSize, KerSize, DepthType.Cv32F);
             kerasymx_ptr = CvInvoke.cvCreateMat(KerSize, KerSize, DepthType.Cv32F);
@@ -268,7 +290,6 @@ namespace ClusterAlign
             kerdiag1_ptr = CvInvoke.cvCreateMat(KerSize, KerSize, DepthType.Cv32F);
             kerdiag2_ptr = CvInvoke.cvCreateMat(KerSize, KerSize, DepthType.Cv32F);
             keradial_ptr = CvInvoke.cvCreateMat(KerSize, KerSize, DepthType.Cv32F);
-            //kmask_ptr = CvInvoke.cvCreateMat(KerSize, KerSize, DepthType.Cv32F); 
             for (int xind = -HKerSize; xind <= HKerSize; xind++)
             {
                 for (int yind = -HKerSize; yind <= HKerSize; yind++)
@@ -291,7 +312,6 @@ namespace ClusterAlign
                     CvInvoke.cvSetReal2D(keradial_ptr, yind + HKerSize, xind + HKerSize, MathF.Sqrt((float)(MathF.Pow(xind,2)+MathF.Pow(yind,2))));
                 }
             }
-            //Mat kmask = CvInvoke.CvArrToMat(kmask_ptr);
             Mat kerx = CvInvoke.CvArrToMat(kerx_ptr);
             Mat kery = CvInvoke.CvArrToMat(kery_ptr);
             Mat kerasymx = CvInvoke.CvArrToMat(kerasymx_ptr);
@@ -319,32 +339,22 @@ namespace ClusterAlign
             int[] Nsvector = new int[Nslices];
             float col1, col2, row1, row2;
             float dx_norm, dy_norm;
-            svector svec1, svec2, svec3,svec4, svecn, svecnull;
+            svector svecnull;
             svecnull = new svector(0,0,0,0,0,0);
             int NumberofLevels = ClusterAlign.Settings4ClusterAlign2.Default.Ncluster - 1; //number of neccessary matching vectors between cluster instances (Ncluster number of necessary fiducials in cluster)
-            int[] cluster_candidate_list = new int[NfidMax];//has another use in second algorithm
-            //int[,] tentative_match_list= new int[Nslices, NumberofLevels];
-            //int[,] sfid_cluster_list = new int[Nslices, NumberofLevels];  //list of elements numbers in each slice participating in the current gathered cluster
-            int[,] sfid_cluster_list = new int[Nslices, NfidMax];  //list of elements numbers in each slice participating in the current gathered cluster
+            int[] cluster_candidate_list = new int[NfidMax];
+             int[,] sfid_cluster_list = new int[Nslices, NfidMax];  //list of elements numbers in each slice participating in the current gathered cluster
             int[,] smatch = new int[Nslices, NfidMax]; // correspondance of fiducial numbers in each slice to the fiducial in center slice
             int[,] smatch_strength1 = new int[Nslices, NfidMax]; // strength of matching
             int[,] smatch_strength2 = new int[Nslices, NfidMax]; // strength of matching
-            int nslice_neighbor, nn_neighbor;
-            bool succeed_match;
             int[] nextsv = new int[Nslices];
             int[] match_counter = new int[NfidMax];
-            int match_counter_cluster;
-            int score1, score2;
-            float step1distance;
             int minslice=0;
             int maxslice=0;
             int count;
-            float min_distance, temp_distance;
-            int tempx, tempy;
             bool missing_location;
             int lastpx = 0;
             int lastpy = 0;
-            int lastcol, lastrow;
             Dx_vect = new double[Nslices];
             Dy_vect = new double[Nslices];
             Array.Clear(Dx_vect, 0, Nslices);
@@ -357,7 +367,7 @@ namespace ClusterAlign
             int marginx = 0;
             int marginy = 0;
             int grand_acc_count = 0;
-
+            double noise_std = 32000;
 
 
             if (ClusterAlign.Settings4ClusterAlign2.Default.ForceFill)
@@ -365,25 +375,34 @@ namespace ClusterAlign
                 NumofIterations = 2;
             }
             bool optical_test = true;
-            if(isfidRequest)
-            {
-                optical_test = false;//continue from table without optical recognition, just to use gap filling
-            }
-
+  
 
             double maxz = 0.05 * Nrows; //maximum z differences we might handle with this software
             for (nslice = 0; nslice < Nslices; nslice++)
             {
-                match_tolerance[nslice] = new svector(0, 0, (int)Math.Floor(tolfactor_center * fidsize), (int)Math.Floor(tolfactor_center * fidsize), (int)(PreAlignmentTolx * 2 + maxz * Math.Sin(Math.Abs(tiltangles[nslice]))), (int)(PreAlignmentToly * 2 + maxz * Math.Sin(Math.Abs(tiltangles[nslice]))));
+                match_tolerance[nslice] = new svector(0, 0, (int)Math.Floor(tolfactor_center * fidsize), (int)Math.Floor(tolfactor_center * fidsize), (int)(Math.Max(PreAlignmentTolx,100) * 2 + maxz * Math.Sin(Math.Abs(tiltangles[nslice]))), (int)(Math.Max(PreAlignmentToly,100) * 2 + maxz * Math.Sin(Math.Abs(tiltangles[nslice]))));
             }
             
             for (IterationNum = 0; IterationNum < NumofIterations; IterationNum++)
             {
+
+                if (isfidRequest)
+                {
+                    if (IterationNum == 0)
+                        optical_test = false;//skip optical recognition, just to use loaded fid points
+                    else
+                    {
+                        optical_test = true;
+                        isfidRequest = false;
+                    }
+                }
+
                 tolerance_radius = (float)(tolfactor_center * fidsize);
                 win1 = "Fiducials Marked";
                 CvInvoke.NamedWindow(win1, WindowFlags.KeepRatio);
                 for (nslice = 0; nslice < Nslices; nslice++)
                 {
+
                     slices[nslice].ConvertTo(slice_mat, DepthType.Cv32F, 1, 0);
                     if (isMRCfile)
                     {
@@ -394,9 +413,12 @@ namespace ClusterAlign
                         CvInvoke.Flip(slice_mat, slice_mat, FlipType.Vertical);
                     }
 
+                    MCvScalar find_mean = new MCvScalar(0);
+                    MCvScalar find_std = new MCvScalar(0);
+ 
                     // Now x/col axis is to the right and y/row axis is downward, starting at uperleftcorner in this program. Up and down are reversed compared to 3dmod but the y values are consistent with the image
                     //Low-pass filter
-                    CvInvoke.GaussianBlur(slice_mat, slice_mat, new System.Drawing.Size(1, 1), 0, 0);//1 instead of Bluesize, like was before
+                    CvInvoke.GaussianBlur(slice_mat, slice_mat, new System.Drawing.Size(1, 1), 0, 0);
 
                     if (optical_test)
                     {
@@ -415,10 +437,17 @@ namespace ClusterAlign
                         ex_SptkmaskOut = CvInvoke.GetStructuringElement(ElementShape.Ellipse, new Size((int)(SptKerSizeOut * say1dx) + (int)(SptKerSizeOut * say1dx + 1) % 2, (int)(SptKerSizeOut * say1dy) + (int)(SptKerSizeOut * say1dy + 1) % 2), new Point(-1, -1));
 
 
+                        if (nslice == ncenter)
+                        {
+                            CvInvoke.MeanStdDev(slice_mat, ref find_mean, ref find_std);
+                            noise_std = find_std.V0;
+                        }
 
                         //High pass filter to matbuffer
-                        low_pass_sizex = (int)MathF.Floor(cluster_size * tolfactor_low_pass_size * (float)say1dx);
-                        low_pass_sizey = (int)MathF.Floor(cluster_size * tolfactor_low_pass_size * (float)say1dy);
+                        //low_pass_sizex = (int)MathF.Floor(cluster_size * tolfactor_low_pass_size * (float)say1dx);
+                        //low_pass_sizey = (int)MathF.Floor(cluster_size * tolfactor_low_pass_size * (float)say1dy);
+                        low_pass_sizex = (int)MathF.Floor(200 * (float)say1dx);
+                        low_pass_sizey = (int)MathF.Floor(200 * (float)say1dy);
                         low_pass_sizex = (low_pass_sizex % 2 == 1) ? low_pass_sizex : low_pass_sizex + 1;
                         low_pass_sizey = (low_pass_sizey % 2 == 1) ? low_pass_sizey : low_pass_sizey + 1;
                         CvInvoke.GaussianBlur(slice_mat, matbuffer2, new System.Drawing.Size(low_pass_sizex, low_pass_sizey), 0, 0);
@@ -429,8 +458,8 @@ namespace ClusterAlign
                         blursizex = blursizex % 2 == 1 ? blursizex : blursizex + 1; //must be odd numbers
                         blursizey = blursizey % 2 == 1 ? blursizey : blursizey + 1;
 
-                        //show win1 = "normal";
-                        //show Program.show_grayimage(matbuffer, win1, Nrows, Ncols);
+                        //win1 = "normal";
+                        //Program.show_grayimage(slice_mat, win1, Nrows, Ncols);
 
                         //**** acquire gradients in the x and y directions ****
                         Program.SpatialGradient(slice_mat, ref gradx, ref grady); //must use non high pass filtered so the margins will make 0 divergence
@@ -441,7 +470,7 @@ namespace ClusterAlign
                         CvInvoke.Multiply(matbuffer0, matbuffer0, matbuffer0);//matbuffer0=matbuffer0.^2
                         CvInvoke.Add(matbuffer2, matbuffer0, matbuffer2);//matbuffer2=matbuffer2+matbuffer0
                         CvInvoke.Sqrt(matbuffer2, matbuffer7);//matbuffer7=sqrt(matbuffer2) = divergence
-                        //remove div lines due to borders
+                        //remove high divergence lines due to borders
                         Image<Gray, float> img7 = matbuffer7.ToImage<Gray, float>();
                         for (int linn = 2; linn < Nrows / 3; linn++)
                         {
@@ -450,7 +479,6 @@ namespace ClusterAlign
                             {
                                 img7.ROI = new Rectangle(0, 0, linn + 12, Ncols);
                                 img7.SetValue(new MCvScalar(0));
-                                //zeros0.CopyTo(new Mat(matbuffer7, new Rectangle(0, 0, linn+10, Ncols)));
                                 break;
                             }
                         }
@@ -472,8 +500,7 @@ namespace ClusterAlign
                             {
                                 img7.ROI = new Rectangle(Nrows - linn - 12, 0, linn + 12, Ncols);
                                 img7.SetValue(new MCvScalar(0));
-                                //zeros0.CopyTo(new Mat(matbuffer7, new Rectangle(Nrows - linn-10, 0, linn + 10, Ncols)));
-                                break;
+                               break;
                             }
                         }
                         for (int linn = 2; linn < Ncols / 3; linn++)
@@ -483,24 +510,21 @@ namespace ClusterAlign
                             {
                                 img7.ROI = new Rectangle(0, Ncols - linn - 12, Nrows, linn + 12);
                                 img7.SetValue(new MCvScalar(0));
-                                //zeros0.CopyTo(new Mat(matbuffer7, new Rectangle(0, Ncols-linn-10, Nrows, linn + 10)));
                                 break;
                             }
                         }
                         img7.ROI = Rectangle.Empty;
                         matbuffer7 = img7.Mat;   //This is image sensitive to gradients around the markers that fit inside the ring of expected radii
-                        //ADDED TAYLORED LOW-PASS
-                        //CvInvoke.MedianBlur(matbuffer7, matbuffer7, 5);
                         CvInvoke.GaussianBlur(matbuffer7, matbuffer7, new System.Drawing.Size(3, 3), 0, 0);
-                        //show win1 = "mat7=div";
-                        //show Program.show_grayimage(matbuffer7, win1, Nrows, Ncols);
+                        //win1 = "mat7=div";
+                        //Program.show_grayimage(matbuffer7, win1, Nrows, Ncols);
+                        //CvInvoke.WaitKey(2000);
 
                         if (isAttentionRequest)
                         {
                             //painted with color 0 over important fiducials - > will generate mask in matbuffer6
                             Attentionslices[nslice].ConvertTo(Attention_slice_mat, DepthType.Cv8U, 1, 0);
                             CvInvoke.Flip(Attention_slice_mat, Attention_slice_mat, FlipType.Vertical);
-                            //CvInvoke.Erode(Attention_slice_mat, Attention_slice_mat, ex_kmask, anchor: new System.Drawing.Point(-1, -1), 1, BorderType.Default, new MCvScalar(0)); //extend zero shade by the size of the mask so the spots around fiducials will not be missed 
                             CvInvoke.Threshold(Attention_slice_mat, matbuffer6, 1, 1, ThresholdType.BinaryInv); //matbuffer6= Attention_slice_mat<1? 1:0 (used as mask to pick color 0)
                             CvInvoke.Multiply(matbuffer7, matbuffer6, matbuffer7, 1.0, DepthType.Cv32F);
                             CvInvoke.Multiply(matbuffer, matbuffer6, matbuffer, 1.0, DepthType.Cv32F);
@@ -522,55 +546,8 @@ namespace ClusterAlign
                         CvInvoke.MinMaxLoc(matbuffer, ref minVal, ref maxVal, ref locationl, ref locationh);
                         matbuffer.ConvertTo(matbuffer, DepthType.Cv32F, 1d, -minVal);
                         CvInvoke.GaussianBlur(matbuffer, matbuffer, new System.Drawing.Size(3, 3), 0, 0);
-                        //matbuffer.ConvertTo(matbuffer0, DepthType.Cv32F); //matbuffer0=matbuffer
                         CvInvoke.Multiply(matbuffer, matbuffer, matbuffer0);//matbuffer0=matbuffer*matbuffer
-                        // matbuffer7 changed first arg temporarily to matbuffer
-                        /*
-                        //Detect anisotropy/ aletrnative 27 Jul 21: smooth the graident along the perpendicular direction and then divide x and y components
-                        CvInvoke.GaussianBlur(gradx, gradx, new System.Drawing.Size(Blursize, 301), 0, 0); //Blursize changed to 21
-                        CvInvoke.AbsDiff(gradx, zeros0, gradx);
-                        CvInvoke.GaussianBlur(grady, grady, new System.Drawing.Size(301, Blursize), 0, 0);
-                        CvInvoke.AbsDiff(grady, zeros0, grady);
-                        CvInvoke.Add(gradx, ones0, gradx);//prevent devide by zero
-                        CvInvoke.Divide(grady, gradx, matbuffer8, 1.0, DepthType.Cv32F); //matbuffer8 is anisotropy
-                        CvInvoke.Threshold(matbuffer8, matbuffer4, 10, 1.0, ThresholdType.BinaryInv);// matbuffer4=matbuffer8 >10 ? 0: 1
-                        CvInvoke.Threshold(matbuffer8, matbuffer2, 0.1, 1.0, ThresholdType.Binary);// matbuffer2=matbuffer8 >0.1 ? 1: 0
-                        CvInvoke.Multiply(matbuffer2, matbuffer4, matbuffer4, 1.0, DepthType.Cv32F);//matbuffer4=matbuffer4*matbuffer2
-                        //for debug: Program.show_grayimage(matbuffer4, win1, Nrows, Ncols);
-                        //Detect anistropy, to avoid choosing such points (only checking here diagonal-edge contributions)
-                        //erase score for cases of hight anistropy (meaning the object is interface and not round)
-                         CvInvoke.MinMaxLoc(matbuffer, ref minVal, ref maxVal, ref locationl, ref locationh);
-                        //CvInvoke.Filter2D(matbuffer, gradx, kerasymx, anchor: new System.Drawing.Point(-1, -1));
-                        //CvInvoke.Filter2D(matbuffer, grady, kerasymy, anchor: new System.Drawing.Point(-1, -1));
-                        //CvInvoke.Max(gradx, grady, grady);
-                        CvInvoke.Filter2D(matbuffer, grady, kerdiag1, anchor: new System.Drawing.Point(-1, -1));
-                        //CvInvoke.Max(gradx, grady, grady);
-                        CvInvoke.Filter2D(matbuffer, gradx, kerdiag2, anchor: new System.Drawing.Point(-1, -1));
-                        CvInvoke.Max(gradx, grady, grady);
-                        CvInvoke.Multiply(grady, ones0, grady, 1.0 / ((maxVal - minVal) * 0.5 * ex_kmask_area));
-                        CvInvoke.Threshold(grady, matbuffer2, 0.1, 1.0, ThresholdType.BinaryInv);// matbuffer2=grad >0.1 ? 0: 1
-                        CvInvoke.Multiply(matbuffer2, matbuffer4, matbuffer4, 1.0, DepthType.Cv32F);//matbuffer4=matbuffer4*matbuffer2
-                        CvInvoke.GaussianBlur(matbuffer4, matbuffer0, new System.Drawing.Size(blursizex, blursizey), 0, 0);
-                        Program.show_grayimage(matbuffer0, win1, Nrows, Ncols);
-                        */
 
-                        /*
-                        //Fiducial detected not only by its border but also by the spot. Image is in matbuffer
-                        CvInvoke.Filter2D(matbuffer, matbuffer2, ex_SptkmaskOut, anchor: new System.Drawing.Point(-1, -1));// Convolute with large circle for negative score
-                        CvInvoke.Filter2D(matbuffer, matbuffer0, ex_Sptkmask, anchor: new System.Drawing.Point(-1, -1));// Convolute with expected fiducial spot for positive score
-                        CvInvoke.Add(matbuffer0, matbuffer0, matbuffer0);//make it twice
-                        CvInvoke.Subtract(matbuffer0, matbuffer2, matbuffer); //matbuffer=matbuffer0 convoluted with (2*expected size circle-larger size circle)
-                        //debug: Program.show_grayimage(matbuffer, win1, Nrows, Ncols);
-                        if (fiducials_bright)
-                        { CvInvoke.Max(matbuffer, zeros0, matbuffer); }//perseve only positive numbers
-                        else
-                        { CvInvoke.Min(matbuffer, zeros0, matbuffer); }//preserve only negative numbers, expected for dark fiducials
-                        CvInvoke.AbsDiff(matbuffer, zeros0, matbuffer);
-                        //combine the three criteria for a score map
-                        CvInvoke.Multiply(matbuffer, matbuffer7, matbuffer, 1.0, DepthType.Cv32F);
-                        CvInvoke.Multiply(matbuffer, matbuffer4, matbuffer, 1.0, DepthType.Cv32F);
-                        //Program.show_grayimage(matbuffer, win1, Nrows, Ncols);
-                        */
                         MCvScalar avgmat = CvInvoke.Mean(matbuffer0, null);
                         if (!ClusterAlign.Settings4ClusterAlign2.Default.coswindow)
                         {
@@ -594,26 +571,6 @@ namespace ClusterAlign
                         //show win1 = "mat*mat7";
                         //show Program.show_grayimage(matbuffer0, win1, Nrows, Ncols);
 
-
-
-                        /*
-                        CvInvoke.GaussianBlur(matbuffer, matbuffer, new System.Drawing.Size(blursizex, blursizey), 0, 0); //ksize=?,?. sigmaX=0, sigmaY=0 means computing from ksize
-                                                                                                                          //CvInvoke.GaussianBlur(matbuffer, matbuffer, new System.Drawing.Size(HKerSize, HKerSize), 0, 0); //make the blobed maxima points (of equal values) have maximum at the center
-                                                                                                                          //win1 = "fiducials only";
-                                                                                                                          //Program.show_grayimage(matbuffer, win1, Nrows, Ncols);
-                                                                                                                          // **** Dilate local maxima of divergence and show in matbuffer2  ****
-                                                                                                                        //Optional attention file used to assign attention to important fiducials to be selected in parallel
-                         //Detect anistropy, to avoid choosing such points (working on dilated-enhanced image, binarized according to treshold)
-                        //CvInvoke.AbsDiff(matbuffer, zeros0, matbuffer0);
-                        //CvInvoke.AdaptiveThreshold(matbuffer0, matbuffer0, 1.0, AdaptiveThresholdType.GaussianC, ThresholdType.Binary, 30, 0.03); //grayscale to binary
-                        //CvInvoke.Filter2D(matbuffer3, matbuffer2, ex_kmask2nd, anchor: new System.Drawing.Point(-1, -1)); //area of max fiducial 
-                        //CvInvoke.Filter2D(matbuffer3, matbuffer7, ex_kmask2ndOut, anchor: new System.Drawing.Point(-1, -1)); //area double of max fiducial
-                        //CvInvoke.Add(matbuffer2, ones0, matbuffer2);//prevent devide by zero
-                        //CvInvoke.Divide(matbuffer7, matbuffer2, matbuffer8, 1, DepthType.Cv32F); //matbuffer8 is anisotropy= correlation with large area/ correlation with circle area
-                        //CvInvoke.Threshold(matbuffer8, matbuffer4, 4.0, 1.0, ThresholdType.BinaryInv);// matbuffer4=matbuffer8 >0.6 ? 0: 1
-                        //Program.show_grayimage(matbuffer4, win1, Nrows, Ncols);
-                        */
-
                         CvInvoke.Dilate(matbuffer7, matbuffer2, ex_kmaskDilate, anchor: new System.Drawing.Point(-1, -1), 1, BorderType.Default, new MCvScalar(0));//Dilate one iteration:  replace neighborhoods with maxima and save in matbuffer2
                         CvInvoke.Compare(matbuffer2, matbuffer7, localmaxima, CmpType.Equal); //localmaxima= xFF at locations of local peaks of divergenece (based on comparison of dilation with original image)
                         //win1 = "mat2";
@@ -621,90 +578,24 @@ namespace ClusterAlign
                         //remove localmaxima that are actually zeros
                         CvInvoke.Compare(matbuffer2, zeros0, matbuffer3, CmpType.Equal);
                         CvInvoke.BitwiseXor(localmaxima, matbuffer3, localmaxima);
-                        /*
-                        //2nd filter
-                        //make another attempt to distinguished the now spots around each fiducial (to differ from lines with same intensity)
-                        //matbuufer0 will be filtered accordingly
-                        CvInvoke.Filter2D(matbuffer0, matbuffer2, ex_kmask2ndOut, anchor: new System.Drawing.Point(-1, -1));// Convolute with large circle for negative score
-                        CvInvoke.Filter2D(matbuffer0, matbuffer0, ex_kmask2nd, anchor: new System.Drawing.Point(-1, -1));// Convolute with exact circle for positive score
-                        CvInvoke.Add(matbuffer0, matbuffer0, matbuffer0);
-                        CvInvoke.Subtract(matbuffer0, matbuffer2, matbuffer); //matbuffer=matbuffer0 convoluted with (2*expected size circle-larger size circle)
-                        CvInvoke.Max(matbuffer, zeros0, matbuffer0);
-                        CvInvoke.Dilate(matbuffer, matbuffer0, ex_kmaskDilate, anchor: new System.Drawing.Point(-1, -1), 1, BorderType.Default, new MCvScalar(0));//Dilate one iteration:  replace neighborhoods with maxima and save in matbuffer0
-                                                                                                                                                                  //debug: Program.show_grayimage(matbuffer0, win1, Nrows, Ncols);
-
-
-
-                        //need to use matbuffer0 still
-                        CvInvoke.Compare(matbuffer, matbuffer0, localmaxima, CmpType.Equal); //localmaxima= xFF at locations of local peaks of divergenece (based on comparison of dilation with original image)
-                                                                                             // keep matbuffer0 and localmaxima for all sections ahead
-
-                        */
-
-                        //user shows examples of fiducials with the mouse clicks
-                        //filter fodicual points according to intenisty of score and the number of fiducials requested via threshold calculation
-                        /*if (isAttentionRequest)
-                        {
-                            ThresholdG = Program.FindThreshold(matbuffer0, matbuffer6, NfidMax * 3, ex_kmask_area, divergence_bright); //Find ThresoldG according to histogram of dilated divergence map
-                        }
-                        else
-                        {
-                            ThresholdG = Program.FindThreshold(matbuffer0, null, NfidMax * 3, ex_kmask_area, divergence_bright); //Find ThresoldG according to histogram of dilated divergence map
-                        }
-                        CvInvoke.Threshold(matbuffer0, matbuffer3, ThresholdG, 0xFF, ThresholdType.Binary); //matbuffer3= matbuffer0>ThresholdG? 0xFF:0
-                        matbuffer3.ConvertTo(matbuffer3, DepthType.Cv8U);*/
-                        //win1 = "mat3- treshold on mat0";
-                        //Program.show_grayimage(matbuffer3, win1, Nrows, Ncols);
-                        //**** Fiducials are points fullfilling: localmaxima=xFF, matbuffer2>GhresholdG, are seperated from other local maxima, and shades are within common range: 
-                        ///CvInvoke.BitwiseAnd(localmaxima, matbuffer3, matbuffer4); //matbuffer4= localmaxima & matbuffer3
-                        //win1 = "centers of trehsold maxima";
-                        //Program.show_grayimage(matbuffer4, win1, Nrows, Ncols);
 
                         localmaxima.ConvertTo(matbuffer7, DepthType.Cv32F,1d/255);
                         CvInvoke.Dilate(matbuffer7, matbuffer7, ex_kmask, anchor: new System.Drawing.Point(-1, -1), 1, BorderType.Default, new MCvScalar(0));
-                        //CvInvoke.GaussianBlur(matbuffer7, matbuffer7, new System.Drawing.Size(blursizex, blursizey), 0, 0);
-                        ////CvInvoke.Multiply(matbuffer0, matbuffer7, matbuffer7, 1.0d / 256, DepthType.Cv32F);//matbuffer7=matbuffer0*matbuffer4
 
                         if (isAttentionRequest)
                         {
-                            ThresholdG = Program.FindThreshold(matbuffer0, matbuffer6, NfidMax, ex_kmask_area, divergence_bright); //Find ThresoldG according to histogram of dilated divergence map
+                            //Use matbuffer6
                         }
                         else
                         {
-                            ThresholdG = Program.FindThreshold(matbuffer0, matbuffer7, NfidMax, ex_kmask_area, divergence_bright); //Find ThresoldG according to histogram of dilated divergence map
+                            matbuffer7.ConvertTo(matbuffer6, DepthType.Cv8U, 1, 0);
                         }
+                        ThresholdG = Program.FindThreshold(matbuffer0, matbuffer6, NfidMax, ex_kmask_area, divergence_bright); //Find ThresoldG according to histogram of dilated divergence map
                         CvInvoke.Threshold(matbuffer0, matbuffer3, ThresholdG, 0xFF, ThresholdType.Binary); //matbuffer3= matbuffer4>ThresholdG? 0xFF:0
                         matbuffer3.ConvertTo(matbuffer3, DepthType.Cv8U);
                         CvInvoke.BitwiseAnd(localmaxima, matbuffer3, matbuffer4); //matbuffer4= localmaxima & matbuffer3
 
-                        //win1 = "mat4";
-                        //Program.show_grayimage(matbuffer4, win1, Nrows, Ncols);
-                        //Make sure to make only one maximum point in each fiducial area / removed 13sep21
-                        /*CvInvoke.GaussianBlur(matbuffer4, matbuffer5, new System.Drawing.Size(blursizex, blursizey), 0, 0); //ksize=?,?. sigmaX=0, sigmaY=0 means computing from ksize
-                        CvInvoke.Dilate(matbuffer5, matbuffer2, ex_kmaskDilate, anchor: new System.Drawing.Point(-1, -1), 1, BorderType.Default, new MCvScalar(0)); //form uniform ellipses with value equal to the maximum at its area
-                        CvInvoke.Threshold(matbuffer2, matbuffer6, 1, 0xFF, ThresholdType.Binary); //matbuffer6= matbuffer>1? 0xFF:0
-                        CvInvoke.Compare(matbuffer5, matbuffer2, matbuffer4, CmpType.Equal);  //matbuffer4= improved local maxima, it is important that there is only one point at the center of fiducial
-                        CvInvoke.BitwiseAnd(matbuffer4, matbuffer6, matbuffer4); //matbuffer4= matbuffer4 & matbuffer6, remove points outside the dilation ellipses 
-                        */
-
-                        //CvInvoke.Threshold(matbuffer, matbuffer6, 4 * 255, 0xFF, ThresholdType.BinaryInv); //matbuffer6= matbuffer< 4*255
-                        //matbuffer3.ConvertTo(matbuffer6, DepthType.Cv8U);
-                        //CvInvoke.BitwiseAnd(matbuffer4, matbuffer6, matbuffer4); //matbuffer4= matbuffer4 & matbuffer6
-                        /*ThresholdD = Program.FindThreshold(slice_mat, matbuffer4, NfidMax , 1, fiducials_bright); //Find ThresoldD according to histogram of shades of suspected fiducials only
-                        if (fiducials_bright)
-                        {
-                            CvInvoke.Threshold(slice_mat, matbuffer6, ThresholdD, 0xFF, ThresholdType.Binary); //matbuffer6= slice_mat>ThresholdD? 0xFF:0
-                        }
-                        else
-                        {
-                            CvInvoke.Threshold(slice_mat, matbuffer6, ThresholdD, 0xFF, ThresholdType.BinaryInv); //matbuffer6= slice_mat<ThresholdD? 0xFF:0
-                        }
-                        matbuffer6.ConvertTo(matbuffer6, DepthType.Cv8U);
-                        CvInvoke.BitwiseAnd(matbuffer4, matbuffer6, matbuffer4); //matbuffer4= matbuffer4 & matbuffer6
-                       */
-
-                        //matbuffer3.ConvertTo(matbuffer2, DepthType.Cv32F,1.0d);
-                        bool flag_record;
+                         bool flag_record;
                         {
                             Mat ROItemp;
                             Mat t_ROItemp = new Mat(exclude_radius * 2 + 1, exclude_radius * 2 + 1, DepthType.Cv32F, 1);
@@ -735,9 +626,6 @@ namespace ClusterAlign
                                         if (flag_record)
                                         {
                                             ROItemp = new Mat(matbuffer0, new Rectangle(col - exclude_radius, row - exclude_radius, exclude_radius * 2 + 1, exclude_radius * 2 + 1));
-                                            //reduce background to zero
-                                            //CvInvoke.MinMaxLoc(ROItemp, ref minVal, ref maxVal, ref locationl, ref locationh);
-                                            //ROItemp.ConvertTo(ROItemp, DepthType.Cv32F, 1d, -minVal);
                                             //do not accumulate very anostropic features
                                             CvInvoke.Transpose(ROItemp, t_ROItemp);
                                             CvInvoke.MatchTemplate(ROItemp, t_ROItemp, scoreImg, TemplateMatchingType.CcorrNormed);
@@ -772,11 +660,15 @@ namespace ClusterAlign
                                 CvInvoke.Accumulate(submatbuffer, grand_submatbuffer);
                                 grand_acc_count++;
                             }
-                            if (IterationNum == 0 && nslice == Nslices - 1 && grand_acc_count>0)
+                            if (IterationNum == 0 && nslice == Nslices - 1 && grand_acc_count>0) //operations in the last slice
                             {
                                 grand_submatbuffer.ConvertTo(grand_submatbuffer, DepthType.Cv32F, 1.0d / grand_acc_count);//normalize
+                                //CvInvoke.MeanStdDev(grand_submatbuffer,ref find_mean, ref find_std);
                                 CvInvoke.MinMaxLoc(grand_submatbuffer, ref minVal, ref maxVal, ref locationl, ref locationh);
-                                if (1==0 && maxVal - minVal > 0)
+                                double signal_var = Math.Sqrt(maxVal)- Math.Sqrt(minVal); //this is the isolated signal (fiducial) with respect to the non-squared pixel levels
+                                Console.WriteLine("CNR= {0:0.000}", signal_var/noise_std); //Contrast to noise ratio of the fiducials
+                                reportfobj.WriteLine("CNR= {0:0.000}", signal_var / noise_std);
+                                if (auto_fid_size && maxVal - minVal > 0)
                                 {
                                     //this block adjusts fidsize and its related mask 
                                     double threshold_t = 0;
@@ -787,7 +679,7 @@ namespace ClusterAlign
                                     MCvScalar sumim = CvInvoke.Sum(thresh);
                                     //Update avergae fiducial radius for next iteration
                                     fidsize = (float)(2*Math.Sqrt((sumim.V0 / 255.0) / Math.PI)); //based on area of a circle
-                                    Console.WriteLine("Updated avg. fiducial size= {0}",fidsize);
+                                    Console.WriteLine("Updated avg. fiducial size= {0:0.0}",fidsize);
                                     HKerSize = Convert.ToInt32(MathF.Ceiling(0.5F * fidsize * (1 + fidsize_ratiovar))); //Half kernel size for convolution in image processing
                                     KerSize = 2 * HKerSize + 1;
                                     HKerSizeDilate = (int)(HKerSize / 2);
@@ -842,18 +734,10 @@ namespace ClusterAlign
                         matbuffer2.SetTo(new MCvScalar(0));
                         submatbuffer_match.CopyTo(new Mat(matbuffer2, new Rectangle(exclude_radius, exclude_radius, submatbuffer_match.Cols, submatbuffer_match.Rows))); //matbuffer0 is now the image of correlation with submat 
 
-                         // Find centers anew
-                        //CvInvoke.Dilate(matbuffer0, matbuffer2, ex_kmaskDilate, anchor: new System.Drawing.Point(-1, -1), 1, BorderType.Default, new MCvScalar(0));//Dilate one iteration:  replace neighborhoods with maxima and save in matbuffer2
-                        //CvInvoke.Compare(matbuffer2, matbuffer0, localmaxima, CmpType.Equal); //localmaxima= xFF at locations of local peaks of divergenece (based on comparison of dilation with original image)
-                       
-                        CvInvoke.Dilate(matbuffer2, matbuffer7, ex_kmaskDilate, anchor: new System.Drawing.Point(-1, -1), 1, BorderType.Default, new MCvScalar(0));//Dilate one iteration:  replace neighborhoods with maxima and save in matbuffer2
+                         CvInvoke.Dilate(matbuffer2, matbuffer7, ex_kmaskDilate, anchor: new System.Drawing.Point(-1, -1), 1, BorderType.Default, new MCvScalar(0));//Dilate one iteration:  replace neighborhoods with maxima and save in matbuffer2
                         CvInvoke.Compare(matbuffer2, matbuffer7, localmaxima, CmpType.Equal); //localmaxima= xFF at locations of local peaks of divergenece (based on comparison of dilation with original image)
                         localmaxima.ConvertTo(matbuffer7, DepthType.Cv32F,1d/255);
                         CvInvoke.Dilate(matbuffer7, matbuffer7, ex_kmask, anchor: new System.Drawing.Point(-1, -1), 1, BorderType.Default, new MCvScalar(0));
-                        //CvInvoke.GaussianBlur(matbuffer7, matbuffer7, new System.Drawing.Size(blursizex, blursizey), 0, 0);
-                        ///CvInvoke.Multiply(matbuffer0, matbuffer7, matbuffer0,1d/255,DepthType.Cv32F);
-                        //CvInvoke.GaussianBlur(matbuffer0, matbuffer0, new System.Drawing.Size(blursizex, blursizey), 0, 0);
-
                         //
                         CvInvoke.Multiply(matbuffer0, matbuffer0, matbuffer0);//matbuffer0=matbuffer0*matbuffer0   //NEEDED TO EMPHASIS MORE THE ACTUAL IMAGE (maybe use filter on match image)
                         CvInvoke.Multiply(matbuffer2, matbuffer0, matbuffer0);//matbuffer0=matbuffer2*matbuffer0
@@ -865,12 +749,13 @@ namespace ClusterAlign
                         //Calculate improved matbuffer3 and use it to caluclate matbuffer4 based on previous found localmax
                         if (isAttentionRequest)
                         { 
-                            ThresholdG = Program.FindThreshold(matbuffer0, matbuffer6, NfidMax, ex_kmask_area, divergence_bright); 
+                            //Use matbuffer6
                         } 
                         else
                         {
-                            ThresholdG = Program.FindThreshold(matbuffer0, matbuffer7, NfidMax, ex_kmask_area, divergence_bright);
+                            matbuffer7.ConvertTo(matbuffer6, DepthType.Cv8U, 1, 0);
                         }
+                        ThresholdG = Program.FindThreshold(matbuffer0, matbuffer6, NfidMax, ex_kmask_area, divergence_bright);
                         CvInvoke.Threshold(matbuffer0, matbuffer2, ThresholdG, 0xFF, ThresholdType.Binary); //matbuffer3= matbuffer2=matbuffer0>ThresholdG? 0xFF:0 
                         matbuffer2.ConvertTo(matbuffer3, DepthType.Cv8U);
                         CvInvoke.BitwiseAnd(localmaxima, matbuffer3, matbuffer4); //matbuffer4= localmaxima & matbuffer3
@@ -907,41 +792,9 @@ namespace ClusterAlign
                             }
                         }
 
-                        /*ThresholdG = Program.FindThreshold(submatbuffer_match, null, (int)(NfidMax), 3*3, true);
-                        arr_matbuffer4 = submatbuffer_match.GetData();
-                        ; 
-                        for (int row = exclude_radius+1-1; row <= Nrows - exclude_radius-1; row++)
-                        {
-                            for (int col = exclude_radius+1-1; col <= Ncols - exclude_radius-1; col++)
-                            {
-                                double match_val = Convert.ToDouble(arr_matbuffer4.GetValue(row- exclude_radius, col- exclude_radius));
-                                if (match_val > ThresholdG && NFid[nslice] < NfidMax)
-                                {
-                                    flag_record = true;
-                                    for (int ind_exc = NFid[nslice]-1; ind_exc >=0 ; ind_exc--)
-                                    {
-                                        if (Math.Abs(row - locations[nslice, ind_exc].row) <= exclude_radius && Math.Abs(col - locations[nslice, ind_exc].col) <= exclude_radius)
-                                        {
-                                            if (Math.Sqrt(Math.Pow((row - locations[nslice, ind_exc].row), 2) + Math.Pow((col - locations[nslice, ind_exc].col), 2)) <= exclude_radius)
-                                            {
-                                                flag_record = false;
-                                                break;
-                                            }
-                                        }
-                                    }
-                                    if (flag_record)
-                                    {
-                                        locations[nslice, NFid[nslice]] = new tp(row, col);// write in table the location of fiducial found (y,x)
-                                        NFid[nslice]++;
-                                    }
-                                }
-                            }
-                        }
-                        Console.WriteLine("Total Number of fiducials= " + NFid[nslice].ToString());
-                        */
                     }//if optical_test
                     win1 = "Fiducials Marked";
-                    Program.show_circled_image(slice_mat, win1, Nrows, Ncols, locations, nslice, NFid[nslice], attention_size, fid_count, fidx, fidy,fidn);
+                    Program.show_circled_image(slice_mat, win1, Nrows, Ncols, locations, nslice, NFid[nslice], attention_size, fid_count, fidx, fidy,fidn, ref smatch, NfidMax);
                 }
                 CvInvoke.DestroyWindow(win1);
 
@@ -956,46 +809,7 @@ namespace ClusterAlign
 
 
                 //In a second iteration, erase confusing points in table locations that do not fit to rigid body model according to previous iteration
-                bool flag_found;
-                int xloc, yloc, erase_count = 0;
-                double found_distance_sqr = Math.Pow(0.05 * Ncols, 2);
-                /*if (IterationNum > 0 && false) // decimation of points outside fit
-                {
-                    for (nslice = 0; nslice < Nslices; nslice++)
-                    {
-                        if (nslice == ncenter) continue;
-                        for (int point1 = 0; point1 < NFid[nslice]; point1++)
-                        {
-                            xloc = locations[nslice, point1].col;
-                            yloc = locations[nslice, point1].row;
-                            flag_found = false;
-                            for (int p = 0; p < fid_count; p++)
-                            {
-                                if (Math.Pow(fidx[nslice, p] - xloc, 2) + Math.Pow(fidy[nslice, p] - yloc, 2) < found_distance_sqr) flag_found = true;
-                            }
-                            if (!flag_found)
-                            {
-                                locations[nslice, point1].col = -1;
-                                locations[nslice, point1].row = -1;
-                            }
-                        }
-                        for (int point1 = 0; point1 < NFid[nslice]; point1++)
-                        {
-                            //remove point from list if needed
-                            if (locations[nslice, point1].col == -1)
-                            {
-                                for (int point2 = point1; point2 < NFid[nslice] - 1; point2++)
-                                {
-                                    locations[nslice, point2].col = locations[nslice, point2 + 1].col;
-                                    locations[nslice, point2].row = locations[nslice, point2 + 1].row;
-                                }
-                                NFid[nslice] = NFid[nslice] - 1;
-                                erase_count++;
-                            }
-                        }
-                    }
-                    Console.WriteLine("Erased {0} points that do not fit to model.", erase_count);
-                }*/
+                 double found_distance_sqr = Math.Pow(0.05 * Ncols, 2);
 
 
                 // **** Determine structure: (1) collect vectors between nearby fiducials to be coupled ****
@@ -1037,7 +851,6 @@ namespace ClusterAlign
                 }
 
 
-                bool skip_flag;
                 //@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@
 
                 int nid;
@@ -1094,7 +907,7 @@ namespace ClusterAlign
                                 }
 
                             }
-                            if (count_collisions>1)
+                            if (count_collisions>1 && !ignore_collisions) //redundant, see tracking function where better collision blockage is implemented
                             {
                                 track_counter[n1] = track_counter[n1] - count_collisions;
                                 for (nid = 0; nid < NFid[nslice]; nid++)
@@ -1164,8 +977,7 @@ namespace ClusterAlign
                         }
 
                     }
-                    //Just mention the range of slices with sufficient tracking information (sufficient according to user parameter)
-                    //cancelled: exclude unproductive slices assuming they are on high tilt angles
+                     //cancelled: exclude unproductive slices assuming they are on high tilt angles
                     minslice = 0;
                 maxslice = Nslices - 1;
                 //find preliminary range of slices
@@ -1209,17 +1021,6 @@ namespace ClusterAlign
                         { match_counter[smatch[nslice, n]]++; } // smatch[nslice, n] holds the fiducial id (identical to the index n in smatch[ncenter,n] and to the values in 
                     }
                 }
-                /*for (int n = 0; n < NfidMax; n++)
-                {
-                    if (match_counter[n] > 0.2 * (maxslice - minslice + 1)) //Reduce threshold from 50% to 20%
-                    {
-                        smatch[ncenter, n] = n; // marks as useful fiducial (the fiducial ID is according to fidcial number in strack[nslice,:].
-                    }
-                    else
-                    {
-                        smatch[ncenter, n] = -1; //unuseful fiducial
-                    }
-                }*/
                 fid_count = 0;
                 missing_location = false;
                 for (int n = 0; n < NFid[ncenter]; n++) //loop over fiducial ids
@@ -1230,7 +1031,6 @@ namespace ClusterAlign
                             {
                                 missing_location = true;
                                 //nslice_neighbor = nslice + (nslice > ncenter ? -1 : 1);
-                                //nn_neighbor = -1;
                                 for (int nn = 0; nn < NfidMax; nn++) //loop over local particle index in nslice frame (the order which particles were found, not the order of fiducial id)
                                 {
                                     if (smatch[nslice, nn] == smatch[ncenter, n])  //if matching for this fiducial was found and locked (the value of smatch is the fiducial id)
@@ -1289,144 +1089,6 @@ namespace ClusterAlign
             minslice = 0;
             maxslice = Nslices - 1;
 
-            //find the most extended slice margins that provide at least N_minimum_tracked_fiducials full coverage 
-              /*  if (!ClusterAlign.Settings4ClusterAlign2.Default.ForceFill || IterationNum==0)// remove marginal points if first iteration 
-                {
-                    int mcount = 0;
-                    int linecount = 0;
-                    int linecountax = 0;
-                    int linecountin = 0;
-                    int nnin = 0;
-                    int nnax = 0;
-                    while ((minslice < ncenter || maxslice > ncenter) && linecount < N_minimum_tracked_fiducials)
-                    {
-                        linecount = 0;
-                        for (int n = 0; n < fid_count; n++)
-                        {
-                            mcount = 0;
-                            for (nslice = minslice; nslice <= maxslice; nslice++)
-                            {
-                                if (fidx[nslice, n] > 0)
-                                {
-                                    mcount++;
-                                }
-                            }
-                            if (mcount == maxslice - minslice + 1)
-                            { linecount++; }
-                        }
-                        for (nnax = 1; maxslice - nnax >= ncenter; nnax++)
-                        {
-                            linecountax = 0;
-                            for (int n = 0; n < fid_count; n++)
-                            {
-                                mcount = 0;
-                                for (nslice = minslice; nslice <= maxslice - nnax; nslice++)
-                                {
-                                    if (fidx[nslice, n] > 0)
-                                    {
-                                        mcount++;
-                                    }
-                                }
-                                if (mcount == maxslice - minslice + 1 - nnax)
-                                { linecountax++; }
-                            }
-                            if (linecountax > linecount)
-                            { break; }
-                        }
-                        for (nnin = 1; minslice + nnin <= ncenter; nnin++)
-                        {
-                            linecountin = 0;
-                            for (int n = 0; n < fid_count; n++)
-                            {
-                                mcount = 0;
-                                for (nslice = minslice + nnin; nslice <= maxslice; nslice++)
-                                {
-                                    if (fidx[nslice, n] > 0)
-                                    {
-                                        mcount++;
-                                    }
-                                }
-                                if (mcount == maxslice - minslice + 1 - nnin)
-                                { linecountin++; }
-                            }
-                            if (linecountin > linecount)
-                            { break; }
-                        }
-                        if (linecount < N_minimum_tracked_fiducials)
-                        {
-                            if (linecountin > linecount && linecountax > linecount && nnin >= nnax)
-                            {
-                                linecountin = linecount;
-                            }
-                            if (linecountin > linecount)
-                            {
-                                minslice += nnin;
-                                linecount = linecountin;
-                            }
-                            else if (linecountax > linecount)
-                            {
-                                maxslice -= nnax;
-                                linecount = linecountax;
-                            }
-                            else
-                            {
-                                Console.WriteLine("Could not reach proper number of tracked fiducials.");
-                                if (IterationNum > 0 || fid_count==0)
-                                {
-                                    Console.WriteLine("Including marginal data suspected unreliable.");
-                                    ClusterAlign.Settings4ClusterAlign2.Default.ForceFill = false;
-                                    minslice = 0;
-                                    maxslice = Nslices - 1;
-                                }
-                                break;
-                            }
-                        }
-                    }
-                }*/
-
-
-
-
-                //Filter results according to pseudo-model (ignore initially the less probable points)
-                /*if (IterationNum == 0)
-                {
-                    int[] avg_shiftx = new int[Nslices];
-                    int[] avg_shifty = new int[Nslices];
-                    for (nslice = 0; nslice < Nslices; nslice++)
-                    {
-                        int countavg = 0;
-                        avg_shiftx[nslice] = 0;
-                        avg_shifty[nslice] = 0;
-                        for (int n = 0; n < fid_count; n++)
-                        {
-                            if ((fidy[nslice, n] > 0 || fidx[nslice, n] > 0) && (fidy[ncenter, n] > 0 || fidx[ncenter, n] > 0)) //otherwise use previous locations of fiducial
-                            {
-                                avg_shiftx[nslice] = avg_shiftx[nslice] + Math.Abs(fidx[nslice, n] - fidx[ncenter, n]);
-                                avg_shifty[nslice] = avg_shifty[nslice] + Math.Abs(fidy[nslice, n] - fidy[ncenter, n]);
-                                countavg++;
-                            }
-                        }
-                        if (countavg > 0)
-                        {
-                            avg_shiftx[nslice] = (int)(avg_shiftx[nslice] / countavg);
-                            avg_shifty[nslice] = (int)(avg_shifty[nslice] / countavg);
-                        }
-                    }
-                    for (nslice = 0; nslice < Nslices; nslice++)
-                    {
-                        for (int n = 0; n < fid_count; n++)
-                        {
-                            if (fidy[nslice, n] > 0 || fidx[nslice, n] > 0) //otherwise use previous locations of fiducial
-                            {
-                                if (Math.Abs(Math.Abs(fidx[nslice, n] - fidx[ncenter, n]) - avg_shiftx[nslice]) > (int)Math.Floor(tolfactor_stability * Ncols) || Math.Abs(Math.Abs(fidy[nslice, n] - fidy[ncenter, n]) - avg_shifty[nslice]) > (int)Math.Floor(tolfactor_stability * Nrows))
-                                {
-                                    fidx[nslice, n] = 0;
-                                    fidy[nslice, n] = 0;
-                                }
-                            }
-                        }
-                    }
-                } */
 
                 //produce *.fid.txt with all observed that can be read by tomoalign
                 writeIMODfidModel(fidx, fidy, Ncols, Nrows, minslice, maxslice, fid_count, FidFileName);
@@ -1437,8 +1099,8 @@ namespace ClusterAlign
                 double min_model_error = -1;
                 for (int n = 0; n < 1; n++)
                 {
-                    model_error = nogaps.fillgaps(0.0, xisRotation ? 0.5 * Math.PI : 0, tiltangles, Nslices, fid_count, ncenter, Ncols, Nrows, ref fidx, ref fidy, ref fidn, ref Bfinal, ref Dx_vect, ref Dy_vect, locations, NFid, IterationNum, ref CorrectAngle, PreAlignmentTolx, PreAlignmentToly, ref xc_ncenter, ref yc_ncenter);
-                    Console.WriteLine("(Fit err {0} pixels)", model_error);
+                    model_error = nogaps.fillgaps(0.0, xisRotation ? 0.5 * Math.PI : 0, tiltangles, Nslices, fid_count, ncenter, Ncols, Nrows, ref fidx, ref fidy, ref fidn, ref Bfinal, ref Dx_vect, ref Dy_vect, locations, NFid, IterationNum, ref CorrectAngle, PreAlignmentTolx, PreAlignmentToly, ref xc_ncenter, ref yc_ncenter, ref report_phi, ref report_psi, basefilename);
+                    Console.WriteLine("(Fit err {0:0.00} pixels)", model_error);
                     if (min_model_error < 0)
                     {
                         min_model_error = model_error;
@@ -1449,18 +1111,43 @@ namespace ClusterAlign
                         break;
                     }
                 }
+                reportfobj.WriteLine("Iteration:{0}", IterationNum);
+                reportfobj.WriteLine("phi={0:0.0}   psi={1:0.0}  [deg]", report_phi*180/Math.PI, report_psi * 180 / Math.PI);
                 Console.WriteLine("Based on N={0} and optical detection in {1}% of the slices or higher:", NumberofLevels+1, N_minimum_tracked_fiducials_percent);
-                Console.WriteLine("Fitting to rigid model is with {0} pixels residue.", model_error); 
-                if (fid_count>0)
-                    Console.WriteLine("Alignment residue: {0} pixels", model_error/Math.Sqrt(fid_count));
+                reportfobj.WriteLine("Based on N={0} and optical detection in {1}% of the slices or higher:", NumberofLevels + 1, N_minimum_tracked_fiducials_percent);
+                Console.WriteLine("Rigid body fitting error {0:0.0} pixles, tracking {1} fiducials.", model_error,fid_count);
+                reportfobj.WriteLine("Rigid body fitting error {0:0.0} pixles, tracking {1} fiducials.", model_error, fid_count);
+                if (fid_count>1)
+                {
+                    Console.WriteLine("Expected alignment residue for rigid body: {0:0.0} pixels", model_error / Math.Sqrt(fid_count));
+                }
                 writeNogapModel(ref Bfinal, fid_count, Nslices, NogapsFidFileName);//add table location to compare and fit with simulated points to extract Dx,Dy when tracked fiducials are missing
 
+                if (cluster_visualize)
+                {
+                    for (nslice=0; nslice<Nslices; nslice++)
+                    {
+                        slices[nslice].ConvertTo(slice_mat, DepthType.Cv32F, 1, 0);
+                        if (isMRCfile)
+                        {
+                            CvInvoke.Transpose(slice_mat, slice_mat); //switch x and y axis so afterwards x(col) is along 3dmod x and y[row] is along 3dmod y. The origin is upperleft corner here and is lowerleft corner in 3dmod but it is the same relative to the image
+                        }
+                        else
+                        {
+                            CvInvoke.Flip(slice_mat, slice_mat, FlipType.Vertical);
+                        }
+
+                        win1 = "Visualize one cluster";
+                        Program.show_circled_image(slice_mat, win1, Nrows, Ncols, locations, nslice, NFid[nslice], attention_size, fid_count, fidx, fidy, fidn, ref smatch, NfidMax);
+                        CvInvoke.WaitKey(5000);  //Wait for the key pressing event
+                    }
+                }
 
                 attention_size = Math.Max((int)(model_error * Math.Sqrt(2) + fidsize),20);
                 
 
                 //Forcefill is the flag to use iterations. The knowledge acquired in iterations is the attention table.
-                if (IterationNum==0 &&  NumofIterations > 1 && fid_count > 0 )// && (minslice>0 || maxslice<Nslices-1) && ClusterAlign.Window1.loadAttentionFile == "")
+                if (IterationNum==0 &&  NumofIterations > 1 && fid_count > 0 )
                 {
                     Console.WriteLine("Building attention map and trying enhanced optical tracking.");
                     optical_test = true;
@@ -1489,23 +1176,47 @@ namespace ClusterAlign
 
 
             } //end of for IterationNum
+            
+            string runmatlab = "clusteralign_astra_reconstruct(" + (coswindow ? 1 : 0).ToString() + "," + Math.Round(report_phi * 180 / Math.PI).ToString() + "," + Math.Round(report_psi * 180 / Math.PI).ToString() + ",'" + out_filename + "','" + rawtltFilename +"','"+basefilename+ ".fit_err_by_slice.txt')";
+            reportfobj.WriteLine("Command for reconstruction in Matlab:");
+            reportfobj.WriteLine(runmatlab);
 
+            reportfobj.Close();
 
             if (fid_count == 0)
             {
-                Console.WriteLine("### Attempt failed. Suggestion: Try increasing the max number of fiducials or the cluster size. ###");
+                Console.WriteLine("### Attempt failed. Suggestion: Try increasing the max number of fiducials or decreasing the tracking threshold. ###");
                 //System.Environment.Exit(0);
             }
             else
             {
                 Console.WriteLine("Range of slices: " + minslice.ToString() + " to " + maxslice.ToString());
-                Console.WriteLine("Saving ali file");
+                Console.WriteLine("Saving ali file ..");
                 //generate ali file
                 MrcStack myMrcStack = new MrcStack();
                 myMrcStack.Fexport(FileName, out_filename, ref Dx_vect, ref Dy_vect);
-                //generate visualization of the clusters, in ali file
-                //myMrcStack.Fvisualize(FileName, showcluster_filename, ref Dx_vect, ref Dy_vect, ref fidx, ref fidy, ref fidn, ref friend, fid_count, Ncandidates, ncenter);
-            }
+
+                //generate reconstruction if requested by user
+                if (ClusterAlign.Settings4ClusterAlign2.Default.add_reconst)
+                {
+                    try
+                    {
+                        #if Windows
+                        Console.WriteLine("Reconstruction ..");
+                        MLApp.MLApp matlab = new MLApp.MLApp();
+                        //Console.WriteLine(@runmatlab);
+                        matlab.Execute(@runmatlab);
+                        #else
+                        Console.WriteLine("For reconstruction past the command in Matlab: "+runmatlab);
+                        #endif
+                    }
+                    catch
+                    {
+                        Console.WriteLine("Connection to Matlab failed, use Matlab directly (see output.txt)");
+                    }
+                }
+             }
+
             Console.WriteLine("Program ended");
 
         }
@@ -1547,7 +1258,8 @@ namespace ClusterAlign
                 p1 = a; p2 = b; p3 = c; p4 = d;
             }
         }
-        public static bool IsSvMatch(svector sv1, svector sv2, double delta_z, double theta1, double theta2,int ns) 
+        
+        public static bool IsSvMatch(svector sv1, svector sv2, double delta_z, double theta1, double theta2,int ns) //Older version, not used! see IsSvMatch_faster below
         {
             //one of the vectors should be in ncenter slice, so delta_z should be known and tentavely assumed the same for the other vector in another slice
             //arrows dx,dy are already compensated for contraction by cos(theta), overall for y axis roation x'=cos(theta)*x+sin(theta)*z should conserve between slices
@@ -1648,6 +1360,7 @@ namespace ClusterAlign
             int list_size=0;
             int[] cluster_candidate_list = new int[Nfid_center];
             int[,] match_score = new int[Nslices,NfidMax];
+            //Array.Clear(match_score, 0, NfidMax*Nslices);
             int nid;
             for (int vector_num = 0; vector_num < Nsvector[ncenter]; vector_num++)
             {
@@ -1663,7 +1376,7 @@ namespace ClusterAlign
             {
                 if (nslice != ncenter)
                 {
-                    Array.Clear(match_score, 0, NfidMax);
+                    int vis_ind = 0;
                     for (int list_num1 = 0; list_num1 < list_size; list_num1++)
                     {
                         svector svec = svectors[ncenter, cluster_candidate_list[list_num1]];
@@ -1677,6 +1390,13 @@ namespace ClusterAlign
                                 {
                                     nid = svectors[nslice, vector_num2].arb_id1;
                                     match_score[nslice, nid] = match_score[nslice, nid] + 1;
+                                    //VISUALIZE
+                                    if (cluster_visualize && n1 == n1visualize) 
+                                    {
+                                        visualize[nslice, vis_ind, 0] = svectors[nslice, vector_num2].arb_id1;//nid
+                                        visualize[nslice, vis_ind, 1] = svectors[nslice, vector_num2].arb_id2;
+                                        vis_ind++;
+                                    }
                                 }
                             }
                         }
@@ -1706,7 +1426,7 @@ namespace ClusterAlign
                                 if (!check_collision)
                                 {
                                     score = match_score[nslice, nid];
-                                    check_collision = true;
+                                    if (!ignore_collisions) check_collision = true;
                                 }
                                 else
                                 {
@@ -1726,7 +1446,14 @@ namespace ClusterAlign
                     score_tempNumberofLevels = track_counter;
                 }
             }
-            tempNumberofLevels = best_tempNumberofLevels;
+            if (NumberofLevels <= 0) //auto =-1
+            {
+                tempNumberofLevels = best_tempNumberofLevels;
+            }
+            else
+            {
+                tempNumberofLevels = NumberofLevels;
+            }
             for (int nslice = 0; nslice < Nslices; nslice++)  //all other slices
             {
                 if (nslice != ncenter)
@@ -1743,7 +1470,7 @@ namespace ClusterAlign
                             {
                                 score = match_score[nslice, nid];
                                 best_n2 = nid;
-                                check_collision = true;
+                                if (!ignore_collisions) check_collision = true;
                             }
                             else
                             {
@@ -1770,6 +1497,7 @@ namespace ClusterAlign
 
         }
 
+        //Older, recursive code to match clusters, was less effective.
         /*public static bool SeekLevel(int level, ref int first_ntag, int last_ntag, int[] ntag_array, int Nsvectors_nslice, int ncenter, ref int NumberofLevels, ref int n1, ref int nslice, ref int inmaster, ref svector[,] svec_perm)
         {
             bool passed;
@@ -1823,7 +1551,7 @@ namespace ClusterAlign
             CvInvoke.WaitKey(500);  //Wait for the key pressing event
             CvInvoke.DestroyWindow(win1);
         }
-        public static void show_circled_image(Mat source, string win1, int Nrows, int Ncols, tp[,] locations, int nslice, int Nfid, int attention_size, int fid_count, int[,] fidx, int[,] fidy, int[,] fidn)
+        public static void show_circled_image(Mat source, string win1, int Nrows, int Ncols, tp[,] locations, int nslice, int Nfid, int attention_size, int fid_count, int[,] fidx, int[,] fidy, int[,] fidn, ref int[,] smatch, int NfidMax)
         {
             Mat showfieldV0 = new Mat(Nrows, Ncols, DepthType.Cv8U, 1);  //1 channel to be scaled
             Mat showfield = new Mat(Nrows, Ncols, DepthType.Cv8U, 3);  //3 channels (RGB)
@@ -1850,13 +1578,27 @@ namespace ClusterAlign
                 {
                     lastpx = fidx[nslice, n];
                     lastpy = fidy[nslice, n];
-                    if (fidn[nslice, n]>=0)
+                    if (fidn[nslice, n]>=0 )
                     { CvInvoke.Circle(showfield, new System.Drawing.Point(lastpx, lastpy), attention_size, mygreen, 1, LineType.AntiAlias); } //tracked
-                    if (fidn[nslice, n]==-2)
+                    if (fidn[nslice, n]==-2 )
                     { CvInvoke.Circle(showfield, new System.Drawing.Point(lastpx, lastpy), attention_size, mywhite, 1, LineType.AntiAlias); }//extrapolated
                 }
             }
+            if (cluster_visualize)
+            {
+                for (int nd=0; nd<50000; nd++)
+                {
+                    if (smatch[nslice, visualize[nslice, nd, 0]] == n1visualize)
+                    {
+                        int p1x = locations[nslice, visualize[nslice, nd, 0]].col;
+                        int p1y = locations[nslice, visualize[nslice, nd, 0]].row;
+                        int p2x = locations[nslice, visualize[nslice, nd, 1]].col;
+                        int p2y = locations[nslice, visualize[nslice, nd, 1]].row;
+                        CvInvoke.Line(showfield, new Point(p1x, p1y), new Point(p2x, p2y), mygreen, 2, LineType.AntiAlias);
+                    }
+                }
 
+            }
 
             CvInvoke.PutText(showfield,"Slice no="+nslice.ToString(),new Point(20,50),FontFace.HersheyPlain,2,new MCvScalar(255,255,255));
             CvInvoke.NamedWindow(win1, WindowFlags.KeepRatio); // WindowFlags.Fullscreen   Create the window using the specific name
@@ -1886,12 +1628,10 @@ namespace ClusterAlign
             double minVal = 0;
             double maxVal = 0;
             double mutiply_factor = 1;// mask==null? 1.2:1.2;// if mask is still not ready then prepare more candidates of fiducials, so expand their allowed numbers
+            double approx_count;
             System.Drawing.Point locationh = new System.Drawing.Point(0, 0);
             System.Drawing.Point locationl = new System.Drawing.Point(0, 0);
-            //Array arr_source = new Byte[Nrows, Ncols];
-            //Array arr_source = source.GetData();
             Mat shsource = new Mat(source.Rows, source.Cols, DepthType.Cv32F, 1);
-            //source.ConvertTo(shsource, DepthType.Cv32F);
             CvInvoke.MinMaxLoc(source, ref minVal, ref maxVal, ref locationl, ref locationh);
             if (maxVal - minVal == 0)
             {
@@ -1902,13 +1642,15 @@ namespace ClusterAlign
             source.ConvertTo(shsource, DepthType.Cv32F,255d/(maxVal-minVal),-minVal* 255d / (maxVal - minVal));
             shsource.ConvertTo(thresh, DepthType.Cv8U);
             threshold_t = CvInvoke.Threshold(thresh, thresh, 0, 255, ThresholdType.Triangle); //Finds threshold by Otsu/triangle algorithm
-            int counter = 0;
+            MCvScalar avgmat = CvInvoke.Sum(thresh);
+            approx_count = (avgmat.V0 / 255.0) / kmask_area;
+            int counter = (approx_count > NfidMax * 20)?1:0;
             float threshold = 0;
             do
             {
-                if (counter>0)
+                if (counter>0 )
                 {
-                    threshold_t = 1.2*threshold_t;
+                    threshold_t = 1.10*threshold_t;
                     shsource.ConvertTo(thresh, DepthType.Cv8U);
                     CvInvoke.Threshold(thresh, thresh, threshold_t, 255, ThresholdType.Binary);
                     if (mask != null) 
@@ -1918,19 +1660,19 @@ namespace ClusterAlign
                 }
                 threshold = (float)(threshold_t * (maxVal - minVal) / 255d + minVal);
                 //display for debugging
-                ///string win2 = "check triangle threshold";
-                ///CvInvoke.NamedWindow(win2, WindowFlags.KeepRatio);
-               ///Program.show_grayimage(thresh, win2, source.Rows, source.Cols);
+                //tring win2 = "check triangle threshold";
+                //CvInvoke.NamedWindow(win2, WindowFlags.KeepRatio);
+                //Program.show_grayimage(thresh, win2, source.Rows, source.Cols);
                 //using SimpleBlobDetector class
                 VectorOfVectorOfPoint contours = new VectorOfVectorOfPoint();
                 Mat hierarchy = new Mat();
                 CvInvoke.FindContours(thresh, contours, hierarchy, RetrType.External, ChainApproxMethod.ChainApproxSimple);
-                counter = contours.Size;
+                counter = contours.Size; //note: count will be reasonable only if the white objects are enough sparse, otherwise could be low but the approx_count will be high
                 //Console.WriteLine("Counted blobs=" + counter.ToString() + "  threshold=" + threshold.ToString());
             } while (counter > NfidMax);
 
-            MCvScalar avgmat=CvInvoke.Sum(thresh);
-            double approx_count = (avgmat.V0 / 255.0) / kmask_area;
+            avgmat=CvInvoke.Sum(thresh);
+            approx_count = (avgmat.V0 / 255.0) / kmask_area;
             if (counter>0 && approx_count< NfidMax*20) return threshold; //normally will exit here
 
             //As back plan count according to histogram
@@ -1948,7 +1690,6 @@ namespace ClusterAlign
             CvInvoke.CalcHist(sources, channels, mask, hist, histsize, histrange , accumulate);
             arr_hist = hist.GetData();  //from mat to array
             int sum = 0;
-            int step = 15;
              if (bright_features) {
                 for (int ind = size - 1; ind >= 0; ind--)
                 {

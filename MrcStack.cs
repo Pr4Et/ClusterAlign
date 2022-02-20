@@ -235,7 +235,7 @@ public const int MRC_CFLOAT_AMP_RAD = 21;        /* COMPLEX FLOAT mode, but in a
             infile = File.OpenRead(ref_filename);
             byte[] outarr = new byte[headersize + readheader.header.next];
             infile.Read(outarr, 0, headersize + readheader.header.next); //read into header
-            outfile.Write(outarr, 0, headersize + readheader.header.next); //read into header
+            outfile.Write(outarr, 0, headersize + readheader.header.next); //write header
             
             Mat slice;
             Mat warpMat = new Mat(2, 3, DepthType.Cv32F, 1);
@@ -261,6 +261,7 @@ public const int MRC_CFLOAT_AMP_RAD = 21;        /* COMPLEX FLOAT mode, but in a
             //return true;
         }
 
+        //old unused function
         public unsafe void Fvisualize(string ref_filename, string out_filename, ref double[] Dx_vect, ref double[] Dy_vect, ref int[,] fidx, ref int[,] fidy, ref int[,] fidn, ref int[,] friend, int fid_count, int Ncandidates, int ncenter)
         {
             outfile = File.OpenWrite(out_filename);

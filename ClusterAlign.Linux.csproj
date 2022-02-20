@@ -1,0 +1,65 @@
+﻿<Project Sdk="Microsoft.NET.Sdk">
+
+  <PropertyGroup>
+    <OutputType>Exe</OutputType>
+    <TargetFramework>net6.0</TargetFramework>
+    <Platforms>AnyCPU;x86;x64</Platforms>
+    <AllowUnsafeBlocks>true</AllowUnsafeBlocks>
+   <StartupObject>ClusterAlign.App</StartupObject>
+    <Copyright>(c)2022 Shahar Seifer, Elbaum lab, Weizmann Institute of Science</Copyright>
+    <AssemblyName>ClusterAlign</AssemblyName>
+    <RootNamespace>ClusterAlign</RootNamespace>
+    <Authors>Shahar Seifer</Authors>
+    <Company>Weizmann Institute of Science</Company>
+  </PropertyGroup>
+
+   <Import Project="..\emgucv\Emgu.CV.Runtime\Windows\Emgu.CV.Runtime.Windows.projitems" Label="Shared" />
+
+  <Import Project="..\emgucv\Emgu.CV.Runtime\Mac\Emgu.CV.Runtime.Mac.projitems" Label="Shared" />
+
+  <Import Project="..\emgucv\Emgu.CV.Runtime\Ubuntu\Emgu.CV.Runtime.Ubuntu.projitems" Label="Shared" />
+
+  <ItemGroup>
+    <ProjectReference Include="..\emgucv\Emgu.CV.Platform\NetStandard\Emgu.CV.Platform.NetStandard.csproj" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <ApplicationDefinition Include="Settings4ClusterAlign2.settings">
+      <Generator>PublicSettingsSingleFileGenerator</Generator>
+      <LastGenOutput>Settings4ClusterAlign2.Designer.cs</LastGenOutput>
+    </ApplicationDefinition>
+  </ItemGroup>
+
+  <ItemGroup>
+    <EmbeddedResource Include="app.xaml">
+      <Generator>MSBuild:Compile</Generator>
+    </EmbeddedResource>
+    <EmbeddedResource Include="Window1.xaml">
+      <Generator>MSBuild:Compile</Generator>
+    </EmbeddedResource>
+  </ItemGroup>
+
+  <ItemGroup>
+    <PackageReference Include="Avalonia" Version="0.10.12" />
+    <PackageReference Include="Avalonia.Desktop" Version="0.10.12" />
+    <PackageReference Include="Avalonia.ReactiveUI" Version="0.10.12" />
+    <PackageReference Include="Avalonia.Remote.Protocol" Version="0.10.12" />
+    <PackageReference Include="System.Configuration.ConfigurationManager" Version="6.0.0" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <Compile Update="Properties\Resources.Designer.cs">
+      <DesignTime>True</DesignTime>
+      <AutoGen>True</AutoGen>
+      <DependentUpon>Resources.resx</DependentUpon>
+    </Compile>
+    <Compile Update="Settings4ClusterAlign2.Designer.cs">
+      <DesignTimeSharedInput>True</DesignTimeSharedInput>
+      <AutoGen>True</AutoGen>
+      <DependentUpon>Settings4ClusterAlign2.settings</DependentUpon>
+    </Compile>
+  </ItemGroup>
+
+
+
+</Project>

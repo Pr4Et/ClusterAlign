@@ -24,121 +24,26 @@ namespace ClusterAlign
     public class nogaps
     {
 
-        public static double [] estimate_z(bool xisrotation, int ncenter, int Nx, int Ny, ClusterAlign.Program.tp[,] locations, int[] NFid, double PreAlignmentTolx, double PreAlignmentToly, ref double[] tiltangles) 
-        {
-            double maxz = 1000;
-            double fit_tol = 5;
-            int pstep = 3, mstep=3;
-            double pi = Math.PI;
-            double xc = Nx / 2.0;
-            double yc = Ny / 2.0;
-            int N = NFid[ncenter];
-            double[] z_values = new double[N];
-            Array.Clear(z_values, 0, N);
-            //find zvalues for fiducials in ncenter slice based on correlation with locations at ncenter+1 and ncenter-1
-            //step1: tentative image shifts
-            double sumxm=0, sumxc=0, sumxp = 0;
-            double sumym = 0, sumyc = 0, sumyp = 0;
-            int sumnm = 0, sumnc = 0, sumnp = 0;
-            int shiftx_p=0, shiftx_m=0, shifty_p=0, shifty_m=0;
-            detect_DxDy_mp(NFid, locations, Nx, Ny, ncenter, mstep, pstep, N, PreAlignmentTolx, PreAlignmentToly, ref shiftx_p, ref shiftx_m, ref shifty_p, ref shifty_m);
-            //step2: choose the most likely track (near target + fitting to consistent model)
-            double costhm = Math.Cos(tiltangles[ncenter-mstep]);
-            double costhc = Math.Cos(tiltangles[ncenter ]);
-            double costhp = Math.Cos(tiltangles[ncenter + pstep]);
-            double sinthm = Math.Sin(tiltangles[ncenter - mstep]);
-            double sinthc = Math.Sin(tiltangles[ncenter]);
-            double sinthp = Math.Sin(tiltangles[ncenter + pstep]);
-            double rangem = Math.Abs(maxz * (sinthm - sinthc));
-            double rangep = Math.Abs(maxz * (sinthp - sinthc));
-            double x, y, xm, ym, xp, yp,targetxm, targetxp, targetym, targetyp;
-            double z, delta, line_err, min_distance;
-            for (int nc = 0; nc < NFid[ncenter]; nc++)
-            {
-                x = locations[ncenter, nc].col - xc;
-                y = locations[ncenter, nc].row - yc;
-                if (xisrotation)
-                {
-                    targetxm = x + shiftx_m; //still no clue about z, it's the best location to expect the fiducial in slice ncenter-1
-                    targetym = y * costhm / costhc + shifty_m;
-                }
-                else
-                {
-                    targetxm = x * costhm / costhc + shiftx_m; //still no clue about z, it's the best location to expect the fiducial in slice ncenter-1
-                    targetym = y + shifty_m;
-                }
-                min_distance = rangem;
-                for (int nm = 0; nm < NFid[ncenter-mstep]; nm++)
-                {
-                    xm = locations[ncenter- mstep, nm].col - xc;
-                    ym = locations[ncenter- mstep, nm].row - yc;
-                    if (xisrotation)
-                    {
-                        delta = (ym - targetym);
-                        line_err = Math.Abs(xm - targetxm);
-                    }
-                    else
-                    {
-                        delta = (xm - targetxm);
-                        line_err = Math.Abs(ym - targetym);
-                    }
-                    if (Math.Abs(delta)<min_distance && line_err<=fit_tol)
-                    {
-                        if (xisrotation)
-                        {
-                            targetxp = x + shiftx_p; 
-                            targetyp = y * costhp / costhc + delta*(sinthp-sinthc)/(sinthm-sinthc) + shifty_p; //delta expected to be z*(sinthm-sinthc)
-                        }
-                        else
-                        {
-                            targetxp = x * costhp / costhc + delta * (sinthp - sinthc) / (sinthm - sinthc) + shiftx_p; //delta expected to be z*(sinthm-sinthc)
-                            targetyp = y + shifty_p;
-                        }
-
-                        for (int np = 0; np < NFid[ncenter + pstep]; np++)
-                        {
-                            xp = locations[ncenter + pstep, np].col - xc;
-                            yp = locations[ncenter + pstep, np].row - yc;
-                            if (Math.Abs(xp-targetxp)<=fit_tol && Math.Abs(yp-targetyp)<=fit_tol)
-                            {
-                                min_distance = Math.Abs(delta);
-                                z_values[nc] = delta / (sinthm - sinthc);
-                            }    
-
-                        }
-                    }
-                }
-            }
-            write_testfile(ref z_values, "D:\\results\\z_initial.txt");
-            return z_values;
-        }
-
-        public static double fillgaps(double psi0, double phi0, double[] theta_vec, int S, int contours, int ncenter, int Nx, int Ny, ref int[,] fidx, ref int[,] fidy, ref int[,] fidn, ref double[,] Bfinal, ref double[] Dx_vect, ref double[] Dy_vect, ClusterAlign.Program.tp[,] locations, int[] NFid, int main_IterationNum, ref double Theta_shift, double PreAlignmentTolx, double PreAlignmentToly, ref double xc0, ref double yc0) //S number of slices
+ 
+        public static double fillgaps(double psi0, double phi0, double[] theta_vec, int S, int contours, int ncenter, int Nx, int Ny, ref int[,] fidx, ref int[,] fidy, ref int[,] fidn, ref double[,] Bfinal, ref double[] Dx_vect, ref double[] Dy_vect, ClusterAlign.Program.tp[,] locations, int[] NFid, int main_IterationNum, ref double Theta_shift, double PreAlignmentTolx, double PreAlignmentToly, ref double xc0, ref double yc0, ref double report_phi, ref double report_psi,string basefilename) //S number of slices
         {
             double pi = Math.PI;
-            double prealigned_maxthreshold = 1000;
             bool xisrotation = ClusterAlign.Settings4ClusterAlign2.Default.xisRotation; //(Math.Abs(phi0-0.5 * Math.PI)< 0.2 * Math.PI);
             double a = 0, b = 0, c = 0, d = 0, e = 0, f = 0, g = 0, h = 0, i = 0;
             double in_a = 0, in_b = 0, in_c = 0, in_d = 0, in_e = 0, in_f = 0, in_g = 0, in_h = 0, in_i = 0;
             double Theta0 = 0;
-            //double Theta_shift=0; -> passed in and out 
             double dtheta = theta_vec[2] - theta_vec[1];
             double phi = 0, psi = 0;
             double xc = Nx / 2.0;
             double yc = Ny / 2.0;
-            //double xc0 = Nx / 2.0; //this only for ncenter slice
-            //double yc0 = Ny / 2.0;
-            double theta;
-            double z0temp1, z0temp2, z_p_n;
+             double theta;
+            double z0temp1, z0temp2;
             double Dx, Dy;
             double xsim, ysim, zsim;
             double[,] Fx = new double[contours, S];
             double[,] Fy = new double[contours, S];
-            //double Theta00 = Theta0;
             double best_angle_psi = psi0;
             double best_angle_phi = phi0;
-            //double grand_best_Theta0 = 0;
-            //double best_Theta_shift = 0;
             double[] zcenter = new double[contours];
             double[] best_zcenter = new double[contours];
             double[] grand_best_zcenter = new double[contours];
@@ -157,7 +62,7 @@ namespace ClusterAlign
             bool[] grand_best_D_vect_valid = new bool[S];
             Array.Clear(grand_best_D_vect_valid, 0, S);
             double sumerror, error, error2, minerror;
-            int count, dXc, dYc;
+            int count;
             int xc_ns, yc_ns;
             double[] xfactor = new double[S];
             double[] yfactor = new double[S];
@@ -185,60 +90,6 @@ namespace ClusterAlign
 
             Console.WriteLine("Fit to rigid body model:");
 
-
-            ///Set more accurate center of rotation (xc or yc depending on rotation axis)
-            /*if (false)
-            {
-                minerror = 10000;
-                int minerror_dXcOrYc = 0;
-                for (int dXcOrYc = -100; dXcOrYc <= 100; dXcOrYc++)
-                {
-                    if (xisrotation)
-                    {
-                        dXc = 0;
-                        dYc = dXcOrYc;
-                    }
-                    else
-                    {
-                        dXc = dXcOrYc;
-                        dYc = 0;
-                    }
-                    sumerror = 0;
-                    count = 0;
-                    for (int ns = 1; ns <= S; ns++)
-                    {
-                        if (ns - 1 == ncenter) continue;
-                        theta = theta_vec[ns - 1] + Theta_shift - Theta0;
-                        Amat(theta, phi, psi, ref a, ref b, ref c, ref d, ref e, ref f, ref g, ref h, ref i);
-                        for (int p = 1; p <= contours; p++)
-                        {
-                            if (fidn[ns - 1, p - 1] >= 0)//(fidx[ns - 1, p - 1] > 1 && fidy[ns - 1, p - 1] > 1)
-                            {
-                                xsim = a * ((double)fidx[ncenter, p - 1] - xc0 - dXc) + b * ((double)fidy[ncenter, p - 1] - yc0 - dYc);
-                                ysim = d * ((double)fidx[ncenter, p - 1] - xc0 - dXc) + e * ((double)fidy[ncenter, p - 1] - yc0 - dYc);
-                                error2 = Math.Pow(((double)fidx[ns - 1, p - 1] - xc - xsim), 2) + Math.Pow(((double)fidy[ns - 1, p - 1] - yc - ysim), 2);
-                                sumerror = sumerror + error2;
-                                count = count + 1;
-                            }
-                        }
-                    }
-                    error = Math.Sqrt(sumerror / (count + 0.5)) - (dXcOrYc == 0 ? 0.1 : 0);
-                    if (error < minerror)
-                    {
-                        minerror = error;
-                        minerror_dXcOrYc = dXcOrYc;
-                    }
-                }
-                if (false)
-                {
-                    if (xisrotation)
-                    { yc0 = yc0 + minerror_dXcOrYc; }
-                    else
-                    { xc0 = xc0 + minerror_dXcOrYc; }
-                }
-            }*/
-             
-            //Fx(slice number, fiducial number) 
             //shift to center at xc,yc
             for (int p = 1; p <= contours; p++) 
             {
@@ -290,90 +141,11 @@ namespace ClusterAlign
             for (int iteration = 1; iteration <=2; iteration++) //was 4 iterations
             {
 
-                //###Build or correct Dx_vect, Dy_vect (planar movement compensations): use data of all fiducials at center extrapoalted by model to other slices compared to actual points ####
-                /*if (main_IterationNum == 0 && (iteration==2 || (iteration==1 && Math.Max(PreAlignmentTolx, PreAlignmentTolx) >= prealigned_maxthreshold)))
-                {
-                    //Array.Clear(D_vect_valid, 0, 2 * S); //initialized to false
-                    grand_best_D_vect_valid[2 * (ncenter)] = true; //center slice should stay zero, do not process
-                    grand_best_D_vect_valid[2 * (ncenter)+1] = true;
-                    Fill_DxDy(grand_best_D_vect_valid, NFid, locations, Nx, Ny, previter_xcenter, previter_ycenter, previter_zcenter, S, contours, theta_vec, Theta_shift,Theta0, phi0, psi0, previter_Dx_vect, previter_Dy_vect, PreAlignmentTolx, PreAlignmentToly);
-                    write_testfile(ref previter_Dx_vect, "E:\\results\\Dx_vect.txt");
-                    write_testfile(ref previter_Dy_vect, "E:\\results\\Dy_vect.txt");
-                }*/
-                //##############################################################################################################################################################################
-                //previter_Dx_vect[ncenter] = xc-xc0;  //the alignment corrections: Dx=xc-xc0, Dy=yc-yc0,  so fidx,fidy will not change, since it is locations in respect to nonshifted images
-                //previter_Dy_vect[ncenter] = yc-yc0;
-
-                /*if (false)
-                {
-                    double min_difference = -1;
-                    double mindif_phi = 0;
-                    double mindif_psi = 0;
-                    for (phi = (phi0 - 20 * pi / 180); phi <= (phi0 + 20 * pi / 180); phi = phi + (1 * pi / 180))//was -15 to 15 step of 3
-                    {
-                        for (psi = (psi0 - 0 * pi / 180); psi <= (psi0 + 0 * pi / 180); psi = psi + (1 * pi / 180))//tested -20 to 20, step of 4
-                        {
-                            double z0sum_first = 0;
-                            int z0count_first = 0;
-                            double z0sum_second = 0;
-                            int z0count_second = 0;
-                            double dif;
-                            for (int p = 1; p <= contours; p++)
-                            {
-                                for (int ns = 1; ns <= ncenter; ns++)
-                                {
-                                    if (fidn[ns - 1, p - 1] >= 0)
-                                    {
-                                        theta = theta_vec[ns - 1] - Theta0;
-                                        Amat(theta, phi, psi, ref a, ref b, ref c, ref d, ref e, ref f, ref g, ref h, ref i);
-                                        Inv(a, b, c, d, e, f, g, h, i, ref in_a, ref in_b, ref in_c, ref in_d, ref in_e, ref in_f, ref in_g, ref in_h, ref in_i);
-                                        z0temp1 = (Fx[p - 1, ns - 1]) - a * previter_xcenter[p - 1] - b * previter_ycenter[p - 1];
-                                        z0temp2 = (Fy[p - 1, ns - 1]) - d * previter_xcenter[p - 1] - e * previter_ycenter[p - 1];
-                                        if (Math.Pow(c, 2) + Math.Pow(f, 2) > 0)
-                                        {
-                                            z0sum_first = z0sum_first + (c * z0temp1 + f * z0temp2) / (Math.Pow(c, 2) + Math.Pow(f, 2));
-                                            z0count_first = z0count_first + 1;
-                                        }
-                                    }
-                                }
-                                for (int ns = ncenter + 2; ns <= S; ns++)
-                                {
-                                    if (fidn[ns - 1, p - 1] >= 0)
-                                    {
-                                        theta = theta_vec[ns - 1] - Theta0;
-                                        Amat(theta, phi, psi, ref a, ref b, ref c, ref d, ref e, ref f, ref g, ref h, ref i);
-                                        Inv(a, b, c, d, e, f, g, h, i, ref in_a, ref in_b, ref in_c, ref in_d, ref in_e, ref in_f, ref in_g, ref in_h, ref in_i);
-                                        z0temp1 = (Fx[p - 1, ns - 1]) - a * previter_xcenter[p - 1] - b * previter_ycenter[p - 1];
-                                        z0temp2 = (Fy[p - 1, ns - 1]) - d * previter_xcenter[p - 1] - e * previter_ycenter[p - 1];
-                                        if (Math.Pow(c, 2) + Math.Pow(f, 2) > 0)
-                                        {
-                                            z0sum_second = z0sum_second + (c * z0temp1 + f * z0temp2) / (Math.Pow(c, 2) + Math.Pow(f, 2));
-                                            z0count_second = z0count_second + 1;
-                                        }
-                                    }
-                                }
-                            }
-                            if (z0count_second > 0 && z0count_first > 0)
-                            {
-                                dif = Math.Abs(z0sum_first / z0count_first - z0sum_second / z0count_second);
-                                if (min_difference < 0 || dif < min_difference)
-                                {
-                                    min_difference = dif;
-                                    mindif_phi = phi;
-                                    mindif_psi = psi;
-                                }
-                            }
-                        }
-                    }
-                    phi0 = mindif_phi;
-                    psi0 = mindif_psi;
-                }*/
-
                 double z_ncenter;
                 grand_minerror = 1000000;
                 for (phi = (phi0 -15 * pi / 180); phi <= (phi0 + 15 * pi / 180); phi = phi + (1 * pi / 180))//was -15 to 15 step of 3
                 {
-                    for (psi = (psi0 -3 * pi / 180); psi <= (psi0 + 3* pi / 180); psi = psi + (1 * pi / 180))//tested -20 to 20, step of 4
+                    for (psi = (psi0 -10 * pi / 180); psi <= (psi0 + 10* pi / 180); psi = psi + (2 * pi / 180))//tested -20 to 20, step of 4
                     {
                         //for (Theta_shift = -0 * pi / 180; Theta_shift <= 0 * pi / 180; Theta_shift = Theta_shift + 1 * pi / 180)//was step of 2
                         {
@@ -382,7 +154,7 @@ namespace ClusterAlign
                             //for (Theta0 = (-0*0.4 * dtheta + Theta00); Theta0 <= (0*0.4 * dtheta + Theta00); Theta0 = Theta0 + dtheta * 0.2)
                             {
 
-                                if (1==1 ||iteration>1 || main_IterationNum > 0)// || Math.Max(PreAlignmentTolx, PreAlignmentTolx) < prealigned_maxthreshold) //not needed for prealigned dataset, at least not intitially and not if the solution is found from tracked fiducials
+                                if (1==1 ||iteration>1 || main_IterationNum > 0)// 
                                 {
                                     // prepare better z0vect
                                     for (int p = 1; p <= contours; p++)
@@ -460,17 +232,8 @@ namespace ClusterAlign
                                     Vtempy = 0;
                                     for (int p = 1; p <= contours; p++)
                                     {
-                                        if (fidn[ns - 1, p - 1] >= 0)//((Fx[p - 1, ns - 1] > -xc && Fy[p - 1, ns - 1] > -yc) || ns - 1 == ncenter)
+                                        if (fidn[ns - 1, p - 1] >= 0 && fidn[ncenter, p - 1]>=0)
                                         {
-                                            //z_p_n = g * xcenter[p - 1] + h * ycenter[p - 1] + i * zcenter[p - 1];
-                                            //M[line - 1] = (xcenter[p - 1] - in_a * (Fx[p - 1, ns - 1]+ previter_Dx_vect[ns - 1]) - in_b * (Fy[p - 1, ns - 1]+ previter_Dy_vect[ns - 1]) - in_c * z_p_n);
-                                            //M[line - 1, (ns - 1) * 2 + 1 - 1] = in_a; // prefactor of Dx[ns]
-                                            //M[line - 1, (ns - 1) * 2 + 2 - 1] = in_b; //prefactor of Dy[ns]
-                                            //line = line + 1;
-                                            //R[line - 1] = (ycenter[p - 1] - in_d * (Fx[p - 1, ns - 1] + previter_Dx_vect[ns - 1]) - in_e * (Fy[p - 1, ns - 1]+ previter_Dy_vect[ns - 1]) - in_f * z_p_n);
-                                            //M[line - 1, (ns - 1) * 2 + 1 - 1] = in_d; // prefactor of Dx[ns]
-                                            //M[line - 1, (ns - 1) * 2 + 2 - 1] = in_e; //prefactor of Dy[ns]
-                                            //line = line + 1;
                                             vector_dxns[Vcount]= a * xcenter[p - 1] + b * ycenter[p - 1] + c * zcenter[p - 1] - Fx[p - 1, ns - 1];
                                             vector_dyns[Vcount] = d * xcenter[p - 1] + e * ycenter[p - 1] + f * zcenter[p - 1] - Fy[p - 1, ns - 1];
                                             Vtempx = Vtempx + a * xcenter[p - 1] + b * ycenter[p - 1] + c * zcenter[p - 1] - Fx[p - 1, ns - 1];
@@ -525,7 +288,7 @@ namespace ClusterAlign
                                         theta = theta_vec[ns - 1] + Theta_shift - Theta0;
                                         Amat(theta, phi, psi, ref a, ref b, ref c, ref d, ref e, ref f, ref g, ref h, ref i);
                                         Inv(a, b, c, d, e, f, g, h, i, ref in_a, ref in_b, ref in_c, ref in_d, ref in_e, ref in_f, ref in_g, ref in_h, ref in_i);
-                                        if (fidn[ns - 1, p - 1] >= 0)//((Fx[p - 1, ns - 1] > -xc + 1 && Fy[p - 1, ns - 1] > -yc + 1) || ns-1==ncenter)
+                                        if (fidn[ns - 1, p - 1] >= 0 && fidn[ncenter, p - 1] >= 0)
                                         {
                                             xsim = a * xcenter[p - 1] + b * ycenter[p - 1] + c * zcenter[p - 1]; // z0vect(p) replaced with initial zcenter
                                             ysim = d * xcenter[p - 1] + e * ycenter[p - 1] + f * zcenter[p - 1];
@@ -540,35 +303,21 @@ namespace ClusterAlign
                                 if (error < minerror)
                                 {
                                     minerror = error;
-                                    //Theta0_best = Theta0;
                                     zcenter.CopyTo(best_zcenter, 0); //second argument is the starting index to copy (length: contour)
-                                                                   //xcenter.CopyTo(best_xcenter, 0);
-                                                                   //ycenter.CopyTo(best_ycenter, 0);
-                                                                   //zcenter.CopyTo(best_zcenter, 0);
-                                                                   //Mbest = M;
-                                                                   //Rbest = R;
                                     Dx_vect_temp.CopyTo(Dxbest, 0); //length S
                                     Dy_vect_temp.CopyTo(Dybest, 0); //length S
                                     D_vect_valid.CopyTo(best_D_vect_valid, 0);
                                 }
                             }
-                            //Theta0 = Theta0_best;
                             if (minerror < grand_minerror)
                             {
                                 grand_minerror = minerror;
                                 best_angle_psi = psi;
                                 best_angle_phi = phi;
-                                //best_Theta_shift = Theta_shift;
-                                //grand_Mbest = Mbest;
-                                //grand_Rbest = Rbest;
                                 Dxbest.CopyTo(grand_Dxbest, 0);
                                 Dybest.CopyTo(grand_Dybest, 0);
                                 best_D_vect_valid.CopyTo(grand_best_D_vect_valid, 0);
-                                //grand_best_Theta0 = Theta0;
                                  best_zcenter.CopyTo(grand_best_zcenter, 0);
-                                //best_xcenter.CopyTo(grand_best_xcenter, 0);
-                                //best_ycenter.CopyTo(grand_best_ycenter, 0);
-                                //best_zcenter.CopyTo(grand_best_zcenter, 0);
                             }
                         } //for Theta_shift
                     } //for psi
@@ -577,8 +326,6 @@ namespace ClusterAlign
 
                 psi = best_angle_psi;
                 phi = best_angle_phi;
-                //Theta0 = grand_best_Theta0;
-                //Theta_shift = best_Theta_shift;
                 for (int tempn = 1; tempn <= S; tempn = tempn + 1)
                 {
                     if (grand_best_D_vect_valid[tempn - 1] && Math.Abs(grand_Dxbest[tempn - 1]) <= PreAlignmentTolx && Math.Abs(grand_Dybest[tempn - 1]) <= PreAlignmentToly)
@@ -587,19 +334,6 @@ namespace ClusterAlign
                         previter_Dy_vect[tempn - 1] = grand_Dybest[tempn - 1];
                     }
                  }
-
-                //minimize z0vect
-                /*double zsum = 0, zavg;
-                for (int p = 1; p <= contours; p++)
-                {
-                    zsum = zsum + grand_best_z0vect[p - 1];
-                }
-                zavg = zsum / contours;
-                for (int p = 1; p <= contours; p++)
-                {
-                    grand_best_z0vect[p - 1] = grand_best_z0vect[p - 1]-zavg;
-                }*/
-
 
                 grand_best_zcenter.CopyTo(zcenter,0);
 
@@ -614,19 +348,16 @@ namespace ClusterAlign
                     previter_zcenter[p - 1] = zcenter[p - 1];
                 }
 
-                //write_testfile(ref z0vect, "D:\\results\\z0vect.txt");
-                write_testfile(ref previter_xcenter, "D:\\results\\xcenter.txt");
-                write_testfile(ref previter_ycenter, "D:\\results\\ycenter.txt");
-                write_testfile(ref previter_zcenter, "D:\\results\\zcenter.txt");
-                write_testfile(ref previter_Dx_vect, "D:\\results\\Dx_vect_t.txt");
-                write_testfile(ref previter_Dy_vect, "D:\\results\\Dy_vect_t.txt");
-
+ 
 
 
 
             } //for iteration
 
-            Console.WriteLine("phi={0}, psi={1}", 0.1 * Math.Round(10 * phi * 180 / pi), 0.1 * Math.Round(10 * psi * 180 / pi));
+            Console.WriteLine("phi={0:0.0}, psi={1:0.0}", phi * 180 / pi,psi * 180 / pi);
+            report_phi = phi;
+            report_psi = psi;
+
 
             previter_xcenter.CopyTo(xcenter, 0);
             previter_ycenter.CopyTo(ycenter, 0);
@@ -638,6 +369,12 @@ namespace ClusterAlign
             previter_Dx_vect.CopyTo(Dx_vect, 0);//store results in permanent vectors
             previter_Dy_vect.CopyTo(Dy_vect, 0);
 
+            //write_testfile(ref z0vect, "D:\\results\\z0vect.txt");
+            write_testfile(ref xcenter, basefilename + ".xcenter.txt");
+            write_testfile(ref ycenter, basefilename + ".ycenter.txt");
+            write_testfile(ref zcenter, basefilename + ".zcenter.txt");
+            write_testfile(ref Dx_vect, basefilename + ".Dx.txt");
+            write_testfile(ref Dy_vect, basefilename + ".Dy.txt");
 
             //correct back to aspect ratio of images
             for (int ns = 1; ns <= S; ns++)
@@ -653,9 +390,7 @@ namespace ClusterAlign
                 slice = n % S;
                 if (fidn[slice, cont] >= 0 || slice == ncenter)//((Fx[cont + 1 - 1, slice + 1 - 1] > -xc && Fy[cont + 1 - 1, slice + 1 - 1] > -yc) || slice==ncenter)
                 {
-                    //Dx = Dx_vect[slice + 1 - 1];
-                    //Dy = Dy_vect[slice + 1 - 1];
-                    xc_ns = (int)(slice == ncenter ? xc0 : xc);
+                     xc_ns = (int)(slice == ncenter ? xc0 : xc);
                     yc_ns = (int)(slice == ncenter ? yc0 : yc);
                     Bfinal[n + 1 - 1, 1 - 1] = 0;
                     Bfinal[n + 1 - 1, 2 - 1] = cont;
@@ -679,7 +414,7 @@ namespace ClusterAlign
                     xsim = a * xcenter[p - 1] + b * ycenter[p - 1] + c * zcenter[p - 1];
                     ysim = d * xcenter[p - 1] + e * ycenter[p - 1] + f * zcenter[p - 1];
                     zsim = g * xcenter[p - 1] + h * ycenter[p - 1] + i * zcenter[p - 1];
-                    if (fidn[ns - 1, p - 1]<0)//(Bfinal[(p - 1) * S + ns - 1, 3 - 1] == 0 && Bfinal[(p - 1) * S + ns - 1, 4 - 1] == 0)
+                    if (fidn[ns - 1, p - 1]<0 || fidn[ncenter, p - 1] < 0)
                     {
                         // implement simulation to fill gaps
                         Bfinal[(p - 1) * S + ns - 1, 1 - 1] = 0;
@@ -702,9 +437,9 @@ namespace ClusterAlign
                 if (count > 0)
                 { fit_err[ns - 1] = Math.Sqrt(sumerror / count); }
                 else
-                { fit_err[ns - 1] = 0; }
+                { fit_err[ns - 1] = -1; }
             }
-            write_testfile(ref fit_err, "D:\\results\\fit_err_by_slice.txt");
+            write_testfile(ref fit_err, basefilename + ".fit_err_by_slice.txt");
 
             return grand_minerror;
 
@@ -756,8 +491,8 @@ namespace ClusterAlign
             string gap="";
             for (int i = 0; i < field.Length; i++)
             {
-                if (i< field.Length-1)
-                { gap = "\t"; }
+                if (i < field.Length - 1)
+                {gap = "\t"; }
                 else
                 { gap = "\n"; }
                 sr.Write(field[i].ToString() + gap);
@@ -766,8 +501,94 @@ namespace ClusterAlign
         }
 
 
+        public static double[] estimate_z(bool xisrotation, int ncenter, int Nx, int Ny, ClusterAlign.Program.tp[,] locations, int[] NFid, double PreAlignmentTolx, double PreAlignmentToly, ref double[] tiltangles)
+        //OLD code, not used, not effective
+        {
+            double maxz = 1000;
+            double fit_tol = 5;
+            int pstep = 3, mstep = 3;
+            double xc = Nx / 2.0;
+            double yc = Ny / 2.0;
+            int N = NFid[ncenter];
+            double[] z_values = new double[N];
+            Array.Clear(z_values, 0, N);
+            //find zvalues for fiducials in ncenter slice based on correlation with locations at ncenter+1 and ncenter-1
+            //step1: tentative image shifts
+            int shiftx_p = 0, shiftx_m = 0, shifty_p = 0, shifty_m = 0;
+            detect_DxDy_mp(NFid, locations, Nx, Ny, ncenter, mstep, pstep, N, PreAlignmentTolx, PreAlignmentToly, ref shiftx_p, ref shiftx_m, ref shifty_p, ref shifty_m);
+            //step2: choose the most likely track (near target + fitting to consistent model)
+            double costhm = Math.Cos(tiltangles[ncenter - mstep]);
+            double costhc = Math.Cos(tiltangles[ncenter]);
+            double costhp = Math.Cos(tiltangles[ncenter + pstep]);
+            double sinthm = Math.Sin(tiltangles[ncenter - mstep]);
+            double sinthc = Math.Sin(tiltangles[ncenter]);
+            double sinthp = Math.Sin(tiltangles[ncenter + pstep]);
+            double rangem = Math.Abs(maxz * (sinthm - sinthc));
+            double rangep = Math.Abs(maxz * (sinthp - sinthc));
+            double x, y, xm, ym, xp, yp, targetxm, targetxp, targetym, targetyp;
+            double delta, line_err, min_distance;
+            for (int nc = 0; nc < NFid[ncenter]; nc++)
+            {
+                x = locations[ncenter, nc].col - xc;
+                y = locations[ncenter, nc].row - yc;
+                if (xisrotation)
+                {
+                    targetxm = x + shiftx_m; //still no clue about z, it's the best location to expect the fiducial in slice ncenter-1
+                    targetym = y * costhm / costhc + shifty_m;
+                }
+                else
+                {
+                    targetxm = x * costhm / costhc + shiftx_m; //still no clue about z, it's the best location to expect the fiducial in slice ncenter-1
+                    targetym = y + shifty_m;
+                }
+                min_distance = rangem;
+                for (int nm = 0; nm < NFid[ncenter - mstep]; nm++)
+                {
+                    xm = locations[ncenter - mstep, nm].col - xc;
+                    ym = locations[ncenter - mstep, nm].row - yc;
+                    if (xisrotation)
+                    {
+                        delta = (ym - targetym);
+                        line_err = Math.Abs(xm - targetxm);
+                    }
+                    else
+                    {
+                        delta = (xm - targetxm);
+                        line_err = Math.Abs(ym - targetym);
+                    }
+                    if (Math.Abs(delta) < min_distance && line_err <= fit_tol)
+                    {
+                        if (xisrotation)
+                        {
+                            targetxp = x + shiftx_p;
+                            targetyp = y * costhp / costhc + delta * (sinthp - sinthc) / (sinthm - sinthc) + shifty_p; //delta expected to be z*(sinthm-sinthc)
+                        }
+                        else
+                        {
+                            targetxp = x * costhp / costhc + delta * (sinthp - sinthc) / (sinthm - sinthc) + shiftx_p; //delta expected to be z*(sinthm-sinthc)
+                            targetyp = y + shifty_p;
+                        }
+
+                        for (int np = 0; np < NFid[ncenter + pstep]; np++)
+                        {
+                            xp = locations[ncenter + pstep, np].col - xc;
+                            yp = locations[ncenter + pstep, np].row - yc;
+                            if (Math.Abs(xp - targetxp) <= fit_tol && Math.Abs(yp - targetyp) <= fit_tol)
+                            {
+                                min_distance = Math.Abs(delta);
+                                z_values[nc] = delta / (sinthm - sinthc);
+                            }
+
+                        }
+                    }
+                }
+            }
+            //write_testfile(ref z_values, "D:\\results\\z_initial.txt");
+            return z_values;
+        }
 
         public static void detect_DxDy_mp(int[] NFid, ClusterAlign.Program.tp[,] locations, int Nx, int Ny, int ncenter, int mstep, int pstep, int contours, double PreAlignmentTolx, double PreAlignmentToly, ref int shiftx_p, ref int shiftx_m, ref int shifty_p, ref int shifty_m)
+        //OLD code, not used and less effective
         {
             //Compare ncenter image to ncenter-1 and ncenter+1 and derive image shifts 
             int coarse_factor = 8;
@@ -781,8 +602,6 @@ namespace ClusterAlign
             bool[,] mesh2 = new bool[nx_coarse, ny_coarse];
             bool[,] mesh1_full = new bool[nx_coarse * coarse_factor, ny_coarse * coarse_factor];
             bool[,] mesh2_full = new bool[nx_coarse * coarse_factor, ny_coarse * coarse_factor];
-            bool flag;
-            double theta, Dx, Dy, xsim, ysim;
             int count_mesh;
             int count_mesh_max;
             int cost, cost_max, cost_fine, cost_fine_max;
@@ -816,7 +635,6 @@ namespace ClusterAlign
                         }
                     }
                     //prepare mesh2 with information in locations (all optically reconginzed fiducials)
-                    int adj_delx, adj_dely;
                     Array.Clear(mesh2, 0, nx_coarse * ny_coarse);
                     Array.Clear(mesh2_full, 0, nx_coarse * coarse_factor * ny_coarse * coarse_factor);
                     for (int pnt = 1; pnt <= NFid[ns - 1]; pnt++)
@@ -929,6 +747,7 @@ namespace ClusterAlign
 
 
         public static void Fill_DxDy(bool[] grand_best_D_vect_valid, int[] NFid, ClusterAlign.Program.tp[,] locations, int Nx, int Ny, double[] xcenter, double[] ycenter, double[] zcenter, int S, int contours, double[] theta_vec, double Theta_shift, double Theta0, double phi, double psi, double[] Dx_vect, double[] Dy_vect, double PreAlignmentTolx, double PreAlignmentToly)
+        //OLD code, not used and less effective
         {
             int coarse_factor = 8;
             int bin = 4;
@@ -943,7 +762,6 @@ namespace ClusterAlign
             bool[,] mesh2 = new bool[nx_coarse, ny_coarse];
             bool[,] mesh1_full = new bool[nx_coarse * coarse_factor, ny_coarse * coarse_factor];
             bool[,] mesh2_full = new bool[nx_coarse * coarse_factor, ny_coarse * coarse_factor];
-            bool flag;
             double theta, Dx, Dy, xsim, ysim;
             int count_mesh;
             int count_mesh_max;
@@ -986,7 +804,6 @@ namespace ClusterAlign
                         }
                     }
                     //prepare mesh2 with information in locations (all optically reconginzed fiducials)
-                    int adj_delx, adj_dely;
                     Array.Clear(mesh2, 0, nx_coarse * ny_coarse);
                     Array.Clear(mesh2_full, 0, nx_coarse * coarse_factor * ny_coarse * coarse_factor);
                     for (int pnt = 1; pnt <= NFid[ns - 1]; pnt++)

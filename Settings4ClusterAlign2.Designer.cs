@@ -12,7 +12,7 @@ namespace ClusterAlign {
     
     
     [global::System.Runtime.CompilerServices.CompilerGeneratedAttribute()]
-    [global::System.CodeDom.Compiler.GeneratedCodeAttribute("Microsoft.VisualStudio.Editors.SettingsDesigner.SettingsSingleFileGenerator", "16.6.0.0")]
+    [global::System.CodeDom.Compiler.GeneratedCodeAttribute("Microsoft.VisualStudio.Editors.SettingsDesigner.SettingsSingleFileGenerator", "16.10.0.0")]
     public sealed partial class Settings4ClusterAlign2 : global::System.Configuration.ApplicationSettingsBase {
         
         private static Settings4ClusterAlign2 defaultInstance = ((Settings4ClusterAlign2)(global::System.Configuration.ApplicationSettingsBase.Synchronized(new Settings4ClusterAlign2())));
@@ -25,7 +25,7 @@ namespace ClusterAlign {
         
         [global::System.Configuration.UserScopedSettingAttribute()]
         [global::System.Diagnostics.DebuggerNonUserCodeAttribute()]
-        [global::System.Configuration.DefaultSettingValueAttribute("BB.tif")]
+        [global::System.Configuration.DefaultSettingValueAttribute("BB.mrc")]
         public string DataFileName {
             get {
                 return ((string)(this["DataFileName"]));
@@ -73,7 +73,7 @@ namespace ClusterAlign {
         
         [global::System.Configuration.UserScopedSettingAttribute()]
         [global::System.Diagnostics.DebuggerNonUserCodeAttribute()]
-        [global::System.Configuration.DefaultSettingValueAttribute("300")]
+        [global::System.Configuration.DefaultSettingValueAttribute("400")]
         public int cluster_size {
             get {
                 return ((int)(this["cluster_size"]));
@@ -85,7 +85,7 @@ namespace ClusterAlign {
         
         [global::System.Configuration.UserScopedSettingAttribute()]
         [global::System.Diagnostics.DebuggerNonUserCodeAttribute()]
-        [global::System.Configuration.DefaultSettingValueAttribute("C:\\\\Users\\\\shaharseifer\\\\Documents\\\\analyze\\\\")]
+        [global::System.Configuration.DefaultSettingValueAttribute("d:\\\\results\\\\")]
         public string Path {
             get {
                 return ((string)(this["Path"]));
@@ -97,7 +97,7 @@ namespace ClusterAlign {
         
         [global::System.Configuration.UserScopedSettingAttribute()]
         [global::System.Diagnostics.DebuggerNonUserCodeAttribute()]
-        [global::System.Configuration.DefaultSettingValueAttribute("7.5")]
+        [global::System.Configuration.DefaultSettingValueAttribute("7")]
         public float fidsize {
             get {
                 return ((float)(this["fidsize"]));
@@ -109,7 +109,7 @@ namespace ClusterAlign {
         
         [global::System.Configuration.UserScopedSettingAttribute()]
         [global::System.Diagnostics.DebuggerNonUserCodeAttribute()]
-        [global::System.Configuration.DefaultSettingValueAttribute("200")]
+        [global::System.Configuration.DefaultSettingValueAttribute("400")]
         public int NfidMax {
             get {
                 return ((int)(this["NfidMax"]));
@@ -121,7 +121,7 @@ namespace ClusterAlign {
         
         [global::System.Configuration.UserScopedSettingAttribute()]
         [global::System.Diagnostics.DebuggerNonUserCodeAttribute()]
-        [global::System.Configuration.DefaultSettingValueAttribute("4")]
+        [global::System.Configuration.DefaultSettingValueAttribute("80")]
         public int N_minimum_tracked_fiducials {
             get {
                 return ((int)(this["N_minimum_tracked_fiducials"]));
@@ -133,7 +133,7 @@ namespace ClusterAlign {
         
         [global::System.Configuration.UserScopedSettingAttribute()]
         [global::System.Diagnostics.DebuggerNonUserCodeAttribute()]
-        [global::System.Configuration.DefaultSettingValueAttribute("4")]
+        [global::System.Configuration.DefaultSettingValueAttribute("150")]
         public double PreAlignmentTol {
             get {
                 return ((double)(this["PreAlignmentTol"]));
@@ -181,7 +181,7 @@ namespace ClusterAlign {
         
         [global::System.Configuration.UserScopedSettingAttribute()]
         [global::System.Diagnostics.DebuggerNonUserCodeAttribute()]
-        [global::System.Configuration.DefaultSettingValueAttribute("7")]
+        [global::System.Configuration.DefaultSettingValueAttribute("-1")]
         public int Ncluster {
             get {
                 return ((int)(this["Ncluster"]));
@@ -193,7 +193,7 @@ namespace ClusterAlign {
         
         [global::System.Configuration.UserScopedSettingAttribute()]
         [global::System.Diagnostics.DebuggerNonUserCodeAttribute()]
-        [global::System.Configuration.DefaultSettingValueAttribute("70")]
+        [global::System.Configuration.DefaultSettingValueAttribute("200")]
         public int TolFidCenter {
             get {
                 return ((int)(this["TolFidCenter"]));
@@ -205,13 +205,25 @@ namespace ClusterAlign {
         
         [global::System.Configuration.UserScopedSettingAttribute()]
         [global::System.Diagnostics.DebuggerNonUserCodeAttribute()]
-        [global::System.Configuration.DefaultSettingValueAttribute("30")]
+        [global::System.Configuration.DefaultSettingValueAttribute("50")]
         public int TolFidSize {
             get {
                 return ((int)(this["TolFidSize"]));
             }
             set {
                 this["TolFidSize"] = value;
+            }
+        }
+        
+        [global::System.Configuration.UserScopedSettingAttribute()]
+        [global::System.Diagnostics.DebuggerNonUserCodeAttribute()]
+        [global::System.Configuration.DefaultSettingValueAttribute("False")]
+        public bool add_reconst {
+            get {
+                return ((bool)(this["add_reconst"]));
+            }
+            set {
+                this["add_reconst"] = value;
             }
         }
     }

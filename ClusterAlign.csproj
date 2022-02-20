@@ -2,9 +2,9 @@
 
   <PropertyGroup>
     <OutputType>Exe</OutputType>
-    <TargetFramework>netcoreapp3.1</TargetFramework>
+    <TargetFramework>net5.0</TargetFramework>
     <StartupObject>ClusterAlign.App</StartupObject>
-    <Copyright>(c)2020 Shahar Seifer, Elbaum lab, Weizmann Institute of Science</Copyright>
+    <Copyright>(c)2022 Shahar Seifer, Elbaum lab, Weizmann Institute of Science</Copyright>
     <AssemblyName>ClusterAlign</AssemblyName>
     <RootNamespace>ClusterAlign</RootNamespace>
     <Authors>Shahar Seifer</Authors>
@@ -13,6 +13,8 @@
     <RepositoryUrl></RepositoryUrl>
     <SignAssembly>false</SignAssembly>
     <Platforms>AnyCPU;x64</Platforms>
+    <AssemblyOriginatorKeyFile>ClusterAlign_TemporaryKey.pfx</AssemblyOriginatorKeyFile>
+	<DefineConstants>Windows</DefineConstants>
   </PropertyGroup>
 
   <PropertyGroup Condition="'$(Configuration)|$(Platform)'=='Debug|AnyCPU'">
@@ -66,6 +68,12 @@
     <PackageReference Include="Emgu.CV.runtime.windows" Version="4.5.3.4721" />
     <PackageReference Include="System.Configuration.ConfigurationManager" Version="4.7.0" />
     <PackageReference Include="System.Runtime.InteropServices.RuntimeInformation" Version="4.3.0" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <Reference Include="Interop.MLApp">
+      <HintPath>obj\x64\Debug\net5.0\Interop.MLApp.dll</HintPath>
+    </Reference>
   </ItemGroup>
 
   <ItemGroup>

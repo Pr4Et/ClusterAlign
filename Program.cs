@@ -32,7 +32,7 @@ namespace ClusterAlign
 {
     public class Program
     {
-        static String Version_information = "ClusterAlign (ver 2021-Feb-20).";
+        static String Version_information = "ClusterAlign (ver 2021-Feb-21).";
         static bool xisRotation = ClusterAlign.Settings4ClusterAlign2.Default.xisRotation;
         static svector[] match_tolerance;
         static int cluster_size = ClusterAlign.Settings4ClusterAlign2.Default.cluster_size; //maximum x/y distance between related fiducials in a single cluster
@@ -331,7 +331,7 @@ namespace ClusterAlign
             Size sayzero = new Size(0, 0);
             kmask_area =(int)(3.14F* HKerSize* HKerSize);
             int ex_kmask_area;
-            int blursizex, blursizey, low_pass_sizex, low_pass_sizey;
+            int low_pass_size;
             string win1;
             svectors = new svector[Nslices, NfidMax * NfidMax];
             svectors_radius = new int[Nslices, NfidMax * NfidMax];
@@ -367,6 +367,7 @@ namespace ClusterAlign
             int marginx = 0;
             int marginy = 0;
             int grand_acc_count = 0;
+            int blursizex, blursizey;
             double noise_std = 32000;
 
 
@@ -423,9 +424,12 @@ namespace ClusterAlign
                     if (optical_test)
                     {
 
-                        double say1dx = 1d / (double)factordx(nslice, tiltangles);
-                        double say1dy = 1d / (double)factordy(nslice, tiltangles);
-                        CvInvoke.Resize(kerx, ex_kerx, sayzero, say1dx, say1dy, Inter.Cubic);
+                        //The size of spherical fiducials will expand in one direction in the consine sampling aspect ratio
+                        //Note that the coordinates to Mat array go like y,x but in some commands the order is x,y 
+                        double say1 = 1d /(Math.Cos(tiltangles[nslice]));
+                        double say1dx = (!coswindow) ? 1d : (xisRotation? 1d: say1);
+                        double say1dy = (!coswindow) ? 1d : (xisRotation ? say1 : 1d); 
+                        CvInvoke.Resize(kerx, ex_kerx, sayzero, say1dx, say1dy, Inter.Cubic); //resize the mat file ex_kerx to say1dy,say1dx 
                         CvInvoke.Resize(kery, ex_kery, sayzero, say1dx, say1dy, Inter.Cubic);
                         ex_kmask = CvInvoke.GetStructuringElement(ElementShape.Ellipse, new Size((int)(KerSize * say1dx) + (int)(KerSize * say1dx + 1) % 2, (int)(KerSize * say1dy) + (int)(KerSize * say1dy + 1) % 2), new Point(-1, -1));
                         ex_kmask_area = CvInvoke.CountNonZero(ex_kmask);
@@ -444,17 +448,13 @@ namespace ClusterAlign
                         }
 
                         //High pass filter to matbuffer
-                        //low_pass_sizex = (int)MathF.Floor(cluster_size * tolfactor_low_pass_size * (float)say1dx);
-                        //low_pass_sizey = (int)MathF.Floor(cluster_size * tolfactor_low_pass_size * (float)say1dy);
-                        low_pass_sizex = (int)MathF.Floor(200 * (float)say1dx);
-                        low_pass_sizey = (int)MathF.Floor(200 * (float)say1dy);
-                        low_pass_sizex = (low_pass_sizex % 2 == 1) ? low_pass_sizex : low_pass_sizex + 1;
-                        low_pass_sizey = (low_pass_sizey % 2 == 1) ? low_pass_sizey : low_pass_sizey + 1;
-                        CvInvoke.GaussianBlur(slice_mat, matbuffer2, new System.Drawing.Size(low_pass_sizex, low_pass_sizey), 0, 0);
+                        low_pass_size = (int)MathF.Floor(200 );
+                        low_pass_size = (low_pass_size % 2 == 1) ? low_pass_size : low_pass_size + 1;
+                        CvInvoke.GaussianBlur(slice_mat, matbuffer2, new System.Drawing.Size(low_pass_size, low_pass_size), 0, 0);
                         CvInvoke.Subtract(slice_mat, matbuffer2, matbuffer); //remove large features (like shadows), store in matbuffer
-                                                                             //*** smooth a little aiming at the borders of the fiducial markers ***
-                        blursizex = (int)MathF.Floor(tolfactor_blur * fidsize * (float)say1dx);
-                        blursizey = (int)MathF.Floor(tolfactor_blur * fidsize * (float)say1dy);
+                                                                             
+                        blursizex = (int)MathF.Floor((float)say1dx * fidsize/2 );
+                        blursizey = (int)MathF.Floor((float)say1dy * fidsize/2 );
                         blursizex = blursizex % 2 == 1 ? blursizex : blursizex + 1; //must be odd numbers
                         blursizey = blursizey % 2 == 1 ? blursizey : blursizey + 1;
 
@@ -649,9 +649,10 @@ namespace ClusterAlign
                             { submatbuffer.ConvertTo(submatbuffer, DepthType.Cv32F, 1.0d / NFid[nslice]); } //normalize accumulated images to average 8U/32F
                             else
                             {
-                                //intial assumption about shape of fiducial (will be the only clue if no auumulated shape found):
+                                //intial assumption about shape of fiducial (artifical template):
                                 submatbuffer.SetTo(new MCvScalar(0));
-                                CvInvoke.Circle(submatbuffer, new Point(exclude_radius, exclude_radius), HKerSize, avgmat, -1); //avgmat instead of new MCvScalar();
+                                CvInvoke.Circle(submatbuffer, new Point(exclude_radius, exclude_radius), (int)(0.75*HKerSize), avgmat, -1); //avgmat instead of new MCvScalar();
+                                CvInvoke.GaussianBlur(submatbuffer, submatbuffer, new System.Drawing.Size(blursizex, blursizey), 0, 0);
                             }
                             win1 = "generated template";
                             Program.show_grayimage(submatbuffer, win1, exclude_radius * 2 + 2, exclude_radius * 2 + 2);

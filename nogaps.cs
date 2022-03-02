@@ -143,9 +143,9 @@ namespace ClusterAlign
 
                 double z_ncenter;
                 grand_minerror = 1000000;
-                for (phi = (phi0 -15 * pi / 180); phi <= (phi0 + 15 * pi / 180); phi = phi + (1 * pi / 180))//was -15 to 15 step of 3
+                for (phi = (phi0 -15 * pi / 180); phi <= (phi0 + 15 * pi / 180); phi = phi + (3 * pi / 180))//was -15 to 15 step of 3
                 {
-                    for (psi = (psi0 -10 * pi / 180); psi <= (psi0 + 10* pi / 180); psi = psi + (2 * pi / 180))//tested -20 to 20, step of 4
+                    for (psi = (psi0 -15 * pi / 180); psi <= (psi0 + 15* pi / 180); psi = psi + (3 * pi / 180))//tested -20 to 20, step of 4
                     {
                         //for (Theta_shift = -0 * pi / 180; Theta_shift <= 0 * pi / 180; Theta_shift = Theta_shift + 1 * pi / 180)//was step of 2
                         {
@@ -501,7 +501,7 @@ namespace ClusterAlign
         }
 
 
-        public static double[] estimate_z(bool xisrotation, int ncenter, int Nx, int Ny, ClusterAlign.Program.tp[,] locations, int[] NFid, double PreAlignmentTolx, double PreAlignmentToly, ref double[] tiltangles)
+        /*public static double[] estimate_z(bool xisrotation, int ncenter, int Nx, int Ny, ClusterAlign.Program.tp[,] locations, int[] NFid, double PreAlignmentTolx, double PreAlignmentToly, ref double[] tiltangles)
         //OLD code, not used, not effective
         {
             double maxz = 1000;
@@ -585,9 +585,9 @@ namespace ClusterAlign
             }
             //write_testfile(ref z_values, "D:\\results\\z_initial.txt");
             return z_values;
-        }
+        } */
 
-        public static void detect_DxDy_mp(int[] NFid, ClusterAlign.Program.tp[,] locations, int Nx, int Ny, int ncenter, int mstep, int pstep, int contours, double PreAlignmentTolx, double PreAlignmentToly, ref int shiftx_p, ref int shiftx_m, ref int shifty_p, ref int shifty_m)
+        /*public static void detect_DxDy_mp(int[] NFid, ClusterAlign.Program.tp[,] locations, int Nx, int Ny, int ncenter, int mstep, int pstep, int contours, double PreAlignmentTolx, double PreAlignmentToly, ref int shiftx_p, ref int shiftx_m, ref int shifty_p, ref int shifty_m)
         //OLD code, not used and less effective
         {
             //Compare ncenter image to ncenter-1 and ncenter+1 and derive image shifts 
@@ -742,11 +742,11 @@ namespace ClusterAlign
                 }
             }
 
-        }
+        } */
 
 
 
-        public static void Fill_DxDy(bool[] grand_best_D_vect_valid, int[] NFid, ClusterAlign.Program.tp[,] locations, int Nx, int Ny, double[] xcenter, double[] ycenter, double[] zcenter, int S, int contours, double[] theta_vec, double Theta_shift, double Theta0, double phi, double psi, double[] Dx_vect, double[] Dy_vect, double PreAlignmentTolx, double PreAlignmentToly)
+        /*public static void Fill_DxDy(bool[] grand_best_D_vect_valid, int[] NFid, ClusterAlign.Program.tp[,] locations, int Nx, int Ny, double[] xcenter, double[] ycenter, double[] zcenter, int S, int contours, double[] theta_vec, double Theta_shift, double Theta0, double phi, double psi, double[] Dx_vect, double[] Dy_vect, double PreAlignmentTolx, double PreAlignmentToly)
         //OLD code, not used and less effective
         {
             int coarse_factor = 8;
@@ -908,7 +908,7 @@ namespace ClusterAlign
                 }
             }
 
-        }
+        }*/
 
 
 

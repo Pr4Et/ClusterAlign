@@ -32,13 +32,12 @@ namespace ClusterAlign
 {
     public class Program
     {
-        static String Version_information = "ClusterAlign (ver 2021-Feb-21).";
+        static String Version_information = "ClusterAlign (ver 2021-Mar-1).";
         static bool xisRotation = ClusterAlign.Settings4ClusterAlign2.Default.xisRotation;
         static svector[] match_tolerance;
-        static int cluster_size = ClusterAlign.Settings4ClusterAlign2.Default.cluster_size; //maximum x/y distance between related fiducials in a single cluster
+        static int cluster_size = ClusterAlign.Settings4ClusterAlign2.Default.cluster_size; //max radius of a single cluster
         static bool coswindow = ClusterAlign.Settings4ClusterAlign2.Default.coswindow; //coswindow: false- simple data, true- window already scalled by cos(tiltangle)= Hoppe sampling
         static double tolfactor_center = 0.01*ClusterAlign.Settings4ClusterAlign2.Default.TolFidCenter;// X fidsize= error in center location of fiducial
-        static float tolfactor_blur =1F; //X fidsize = Gaussian blurring size, scalable further according to x or y projection
         static float fidsize_ratiovar = 0.01F*ClusterAlign.Settings4ClusterAlign2.Default.TolFidSize;  //ratio of variance to total size of fiducials
         static double[] z_values;
         static double[] tiltangles;
@@ -98,6 +97,7 @@ namespace ClusterAlign
             double minVal = 0;
             double maxVal = 0;
             int exclude_radius = Math.Max(12, (int)(fidsize*1.2));
+            //int level_expected = (int)(0.3*NfidMax); //number of cluster members expected, very tentative number
             System.Drawing.Point locationh = new System.Drawing.Point(0, 0);
             System.Drawing.Point locationl = new System.Drawing.Point(0, 0);
             bool fiducials_bright = ClusterAlign.Settings4ClusterAlign2.Default.fiducials_bright; //depends on the image B/D field. Fiducials are dark in bright mode so write false.
@@ -137,6 +137,7 @@ namespace ClusterAlign
             catch
             {
                 Console.WriteLine("## The tilt file could not be found, check file name. ##");
+                Thread.Sleep(10000);
                 System.Environment.Exit(0);
             }
             tiltangles = new double[tiltlines.Length];
@@ -162,6 +163,8 @@ namespace ClusterAlign
             }
             else
             {
+                Console.WriteLine("File type name must be either mrc / tif / st / preali");
+                Thread.Sleep(10000);
                 System.Environment.Exit(0);
             }
 
@@ -381,7 +384,7 @@ namespace ClusterAlign
             double maxz = 0.05 * Nrows; //maximum z differences we might handle with this software
             for (nslice = 0; nslice < Nslices; nslice++)
             {
-                match_tolerance[nslice] = new svector(0, 0, (int)Math.Floor(tolfactor_center * fidsize), (int)Math.Floor(tolfactor_center * fidsize), (int)(Math.Max(PreAlignmentTolx,100) * 2 + maxz * Math.Sin(Math.Abs(tiltangles[nslice]))), (int)(Math.Max(PreAlignmentToly,100) * 2 + maxz * Math.Sin(Math.Abs(tiltangles[nslice]))));
+                match_tolerance[nslice] = new svector(0, 0, (int)Math.Floor(tolfactor_center * fidsize), (int)Math.Floor(tolfactor_center * fidsize), (int)(Math.Max(PreAlignmentTolx,150) * 2 + maxz * Math.Sin(Math.Abs(tiltangles[nslice]))), (int)(Math.Max(PreAlignmentToly,150) * 2 + maxz * Math.Sin(Math.Abs(tiltangles[nslice]))));
             }
             
             for (IterationNum = 0; IterationNum < NumofIterations; IterationNum++)
@@ -792,6 +795,7 @@ namespace ClusterAlign
                                 }
                             }
                         }
+                        //level_expected = Math.Min(1, (2 * cluster_size / Nrows) ^ 2) * NFid[ncenter];
 
                     }//if optical_test
                     win1 = "Fiducials Marked";
@@ -1350,7 +1354,7 @@ namespace ClusterAlign
             if (NumberofLevels<=0) //auto =-1
             {
                 startNumberofLevels = 5;
-                endNumberofLevels = (int)(0.3*NfidMax);
+                endNumberofLevels = (int)(Nfid_center-1);
             }
             else //determined by user
             {
@@ -1726,7 +1730,7 @@ namespace ClusterAlign
         public static void writeIMODfidModel(int[,] fidx, int[,] fidy, int width, int height, int minslice, int maxslice, int fid_count,string fidFileName)
         {
             System.IO.FileStream outfile = File.Create(fidFileName);
-            var sr = new StreamWriter(outfile,System.Text.Encoding.UTF8);
+            var sr = new StreamWriter(outfile,System.Text.UTF8Encoding.Default);
             sr.NewLine = "\n";
             int count;
             for (int i = 0; i < fid_count; i++)
@@ -1794,7 +1798,7 @@ namespace ClusterAlign
         public static void writeNogapModel(ref double[,] Bfinal,int fid_count, int Nslices, string NogapsfidFileName)
         {
             System.IO.FileStream outfile = File.Create(NogapsfidFileName);
-            var sr = new StreamWriter(outfile, System.Text.Encoding.UTF8);
+            var sr = new StreamWriter(outfile, System.Text.UTF8Encoding.Default);
             sr.NewLine = "\n";
             for (int i = 0; i < fid_count*Nslices; i++)
             {

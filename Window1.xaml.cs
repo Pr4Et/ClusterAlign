@@ -38,6 +38,8 @@ namespace ClusterAlign
         private NumericUpDown NumTolFidCenter;
         private NumericUpDown NumTolFidSize;
         private CheckBox reconstruct;
+        private CheckBox normalali;
+
         public Window1()
         {
             this.InitializeComponent();
@@ -68,6 +70,8 @@ namespace ClusterAlign
             NumTolFidCenter = this.FindControl<NumericUpDown>("TolFidCenter");
             NumTolFidSize = this.FindControl<NumericUpDown>("TolFidSize");
             reconstruct = this.FindControl<CheckBox>("reconstruct");
+            normalali = this.FindControl<CheckBox>("normal_ali");
+
 
             TtextInputPath.Text = ClusterAlign.Settings4ClusterAlign2.Default.Path;
             TDatafile.Text= ClusterAlign.Settings4ClusterAlign2.Default.DataFileName;
@@ -90,6 +94,7 @@ namespace ClusterAlign
             NumMarkedfids.Value = 0;
             NumMarkedfids.IsVisible = false;
             reconstruct.IsChecked= ClusterAlign.Settings4ClusterAlign2.Default.add_reconst;
+            normalali.IsChecked = ClusterAlign.Settings4ClusterAlign2.Default.export_normalali;
             btnRun = this.FindControl<Button>("btnRun");
             btnBrowsePath.Click += async (sender, e) => await GetPath();
             btnloadAttention.Click += async (sender, e) => await GetAttentionFile();
@@ -118,6 +123,7 @@ namespace ClusterAlign
             ClusterAlign.Settings4ClusterAlign2.Default.TolFidSize = (int)NumTolFidSize.Value;
             ClusterAlign.Settings4ClusterAlign2.Default.TolFidCenter = (int)NumTolFidCenter.Value;
             ClusterAlign.Settings4ClusterAlign2.Default.add_reconst = (bool)reconstruct.IsChecked;
+            ClusterAlign.Settings4ClusterAlign2.Default.export_normalali= (bool)normalali.IsChecked;
             ClusterAlign.Settings4ClusterAlign2.Default.Save();
             ClusterAlign.App.Hidewin();
             Program.MyMain();

@@ -221,8 +221,10 @@ public const int MRC_CFLOAT_AMP_RAD = 21;        /* COMPLEX FLOAT mode, but in a
             return slices;
         }
 
-        public unsafe void Fexport(string ref_filename, string out_filename, ref double[] Dx_vect, ref double[] Dy_vect)
+        public unsafe void Fexport(string ref_filename, string out_filename, ref double[] Dx_vect, ref double[] Dy_vect, ref double report_phi)
         {
+            bool rotate2normal = Settings4ClusterAlign2.Default.export_normalali;
+            float phi = (float)report_phi;
             outfile = File.OpenWrite(out_filename);
             byte[] arr = new byte[headersize];
             infile = File.OpenRead(ref_filename);
@@ -246,12 +248,24 @@ public const int MRC_CFLOAT_AMP_RAD = 21;        /* COMPLEX FLOAT mode, but in a
             for (uint i = 0; i < readheader.header.nz; i++)
             {
                 slice = ReadImage(i);
+                float x0 = (float)0.25 * nx + (float)Dx_vect[i];
+                float y0 = (float)0.25 * ny + (float)Dy_vect[i];
+                float x1 = (float)0.75 * nx + (float)Dx_vect[i];
+                float y1 = (float)0.25 * ny + (float)Dy_vect[i];
+                float x2 = (float)0.75 * nx + (float)Dx_vect[i];
+                float y2 = (float)0.75 * ny + (float)Dy_vect[i];
                 srcTri[0] = new PointF((float)0.25 * ny, (float)0.25 * nx);
                 srcTri[1] = new PointF((float)0.25 * ny, (float)0.75 * nx);
                 srcTri[2] = new PointF((float)0.75 * ny, (float)0.75 * nx);
-                dstTri[0] = new PointF((float)0.25 * ny + (float)Dy_vect[i], (float)0.25 * nx + (float)Dx_vect[i]);
-                dstTri[1] = new PointF((float)0.25 * ny + (float)Dy_vect[i], (float)0.75 * nx + (float)Dx_vect[i]);
-                dstTri[2] = new PointF((float)0.75 * ny + (float)Dy_vect[i], (float)0.75 * nx + (float)Dx_vect[i]);
+                dstTri[0] = new PointF(y0, x0);
+                dstTri[1] = new PointF(y1, x1);
+                dstTri[2] = new PointF(y2, x2);
+                if (rotate2normal)
+                {
+                    dstTri[0] = new PointF(0.5f * ny + MathF.Cos(-phi) * (y0 - 0.5f*ny) - MathF.Sin(-phi) * (x0 - 0.5f*nx), 0.5f*nx + MathF.Cos(-phi) * (x0 - 0.5f*nx) + MathF.Sin(-phi) * (y0 - 0.5f*ny));
+                    dstTri[1] = new PointF(0.5f * ny + MathF.Cos(-phi) * (y1 - 0.5f*ny) - MathF.Sin(-phi) * (x1 - 0.5f*nx), 0.5f*nx + MathF.Cos(-phi) * (x1 - 0.5f*nx) + MathF.Sin(-phi) * (y1 - 0.5f*ny));
+                    dstTri[2] = new PointF(0.5f * ny + MathF.Cos(-phi) * (y2 - 0.5f*ny) - MathF.Sin(-phi) * (x2 - 0.5f*nx), 0.5f*nx + MathF.Cos(-phi) * (x2 - 0.5f*nx) + MathF.Sin(-phi) * (y2 - 0.5f*ny));
+                }
                 Mat warp_mat = CvInvoke.GetAffineTransform(srcTri, dstTri);
                 CvInvoke.WarpAffine(slice, slice, warp_mat, slice.Size);
                 WriteImage(i, slice);

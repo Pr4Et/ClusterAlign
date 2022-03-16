@@ -32,7 +32,7 @@ namespace ClusterAlign
 {
     public class Program
     {
-        static String Version_information = "ClusterAlign (ver 2021-Mar-1).";
+        static String Version_information = "ClusterAlign (ver 2021-Mar-16).";
         static bool xisRotation = ClusterAlign.Settings4ClusterAlign2.Default.xisRotation;
         static svector[] match_tolerance;
         static int cluster_size = ClusterAlign.Settings4ClusterAlign2.Default.cluster_size; //max radius of a single cluster
@@ -63,6 +63,7 @@ namespace ClusterAlign
             string FidFileName = path + slash + Path.GetFileNameWithoutExtension(FileName)+ ".fid.txt";
             string NogapsFidFileName = path + slash + Path.GetFileNameWithoutExtension(FileName) + ".nogaps.fid.txt";
             string out_filename = path + slash + Path.GetFileNameWithoutExtension(FileName) + ".ali.mrc";
+            string normout_filename = path + slash + Path.GetFileNameWithoutExtension(FileName) + ".normal-ali.mrc";
             string showcluster_filename = path + slash + Path.GetFileNameWithoutExtension(FileName) + ".clusters.mrc";
             string report_filename = path + slash + Path.GetFileNameWithoutExtension(FileName) + ".output.txt";
             string basefilename = path + slash + Path.GetFileNameWithoutExtension(FileName);
@@ -1181,8 +1182,11 @@ namespace ClusterAlign
 
 
             } //end of for IterationNum
-            
-            string runmatlab = "clusteralign_astra_reconstruct(" + (coswindow ? 1 : 0).ToString() + "," + Math.Round(report_phi * 180 / Math.PI).ToString() + "," + Math.Round(report_psi * 180 / Math.PI).ToString() + ",'" + out_filename + "','" + rawtltFilename +"','"+basefilename+ ".fit_err_by_slice.txt')";
+            string runmatlab = "";
+            if (!Settings4ClusterAlign2.Default.export_normalali)
+                runmatlab = "clusteralign_astra_reconstruct(" + (coswindow ? 1 : 0).ToString() + "," + Math.Round(report_phi * 180 / Math.PI).ToString() + "," + Math.Round(report_psi * 180 / Math.PI).ToString() + ",'" + out_filename + "','" + rawtltFilename +"','"+basefilename+ ".fit_err_by_slice.txt')";
+            else
+                runmatlab = "clusteralign_astra_reconstruct(" + (coswindow ? 1 : 0).ToString() + "," + 0.ToString() + "," + Math.Round(report_psi * 180 / Math.PI).ToString() + ",'" + normout_filename + "','" + rawtltFilename + "','" + basefilename + ".fit_err_by_slice.txt')";
             reportfobj.WriteLine("Command for reconstruction in Matlab:");
             reportfobj.WriteLine(runmatlab);
 
@@ -1196,10 +1200,18 @@ namespace ClusterAlign
             else
             {
                 Console.WriteLine("Range of slices: " + minslice.ToString() + " to " + maxslice.ToString());
-                Console.WriteLine("Saving ali file ..");
                 //generate ali file
                 MrcStack myMrcStack = new MrcStack();
-                myMrcStack.Fexport(FileName, out_filename, ref Dx_vect, ref Dy_vect);
+                if (!Settings4ClusterAlign2.Default.export_normalali)
+                {
+                    Console.WriteLine("Saving ali file ..");
+                    myMrcStack.Fexport(FileName, out_filename, ref Dx_vect, ref Dy_vect, ref report_phi);
+                }
+                else
+                {
+                    Console.WriteLine("Saving normal-ali file for 3rd party software ..");
+                    myMrcStack.Fexport(FileName, normout_filename, ref Dx_vect, ref Dy_vect, ref report_phi);
+                }
 
                 //generate reconstruction if requested by user
                 if (ClusterAlign.Settings4ClusterAlign2.Default.add_reconst)

@@ -226,5 +226,17 @@ namespace ClusterAlign {
                 this["add_reconst"] = value;
             }
         }
+        
+        [global::System.Configuration.UserScopedSettingAttribute()]
+        [global::System.Diagnostics.DebuggerNonUserCodeAttribute()]
+        [global::System.Configuration.DefaultSettingValueAttribute("False")]
+        public bool export_normalali {
+            get {
+                return ((bool)(this["export_normalali"]));
+            }
+            set {
+                this["export_normalali"] = value;
+            }
+        }
     }
 }

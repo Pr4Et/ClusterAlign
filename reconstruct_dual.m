@@ -1,5 +1,12 @@
 function reconstruct_dual(cosine_sample,phi_deg1,psi_deg1,Chosen_Filename_ali1,Chosen_Filename_angles1,phi_deg2,psi_deg2,Chosen_Filename_ali2,Chosen_Filename_angles2,varargin)
-if false
+%(C) Written by Shahar Seifer, Weizmann Institute of Science, 2022
+%Load aligned mrc tomograms and reconstruct 3D by SIRT3D in Astra toolbox -
+%1 is for a and 2 is for b tilt series in dual axis tomogram
+%Requires ASTRA Toolbox, https://www.astra-toolbox.com/downloads/index.html#
+%Requires @MRCImage library from MatTomo, PEET project: https://bio3d.colorado.edu/imod/matlab.html
+%varagin includes: bin,nZ
+%##### check parameters ####
+if false %to test independently
     cosine_sample=0;
     phi_deg1=90;
     psi_deg1=0;
@@ -11,26 +18,16 @@ if false
     Chosen_Filename_angles2='D:\results\AD68_1_pt12.rawtlt';
     varargin='';
 end
-%(C) Written by Shahar Seifer, Weizmann Institute of Science, 2022
-%Load aligned mrc tomograms and reconstruct 3D by SIRT3D in Astra toolbox -
-%1 is for a and 2 is for b tilt series in dual axis tomogram
-%Requires ASTRA Toolbox, https://www.astra-toolbox.com/downloads/index.html#
-%Requires @MRCImage library from MatTomo, PEET project: https://bio3d.colorado.edu/imod/matlab.html
-%varagin includes: Chosen_Filename_fiterr,bin,nZ
-%##### check parameters ####
 if ~isempty(varargin)
-    Chosen_Filename_fiterr=varargin{1};
-end
-if length(varargin)>1
-    bin=varargin{2};
+    bin=varargin{1};
     if bin>8
         disp(sprintf('Note that you have chosen bin=%g',bin));
     end
 else
     bin=4; %binning (bin=2 is suitable for 8Gb GPU for output volume of 1024X1024X400 and input of 2048X2048 images)
 end
-if length(varargin)==3
-    nZ=varargin{3};
+if length(varargin)==2
+    nZ=varargin{2};
     if nZ<10
         disp(sprintf('Note that you have chosen thickness of %g',nZ));
     end
@@ -42,9 +39,6 @@ max_fiterr=15;
 %###########################
 gpu = gpuDevice();
 reset(gpu);
-%cosine_sample=input('Adaptive aspect ratio? (cosine_sample=1, otherwise 0): ');
-%phi=input('Enter phi angle in degrees (0: y-axis, 90: x-axis rotation): ')*pi/180;
-%psi=input('Enter psi angle in degrees (0: default): ')*pi/180;
 if isempty(psi_deg1)
 psi_deg1=0;
 end
@@ -78,39 +72,47 @@ rotation_xaxis1=(abs(cos(phi1))<0.7); %rough estimate for tapering margins only
 rotation_xaxis2=(abs(cos(phi2))<0.7); %rough estimate for tapering margins only
 
 
-%[filename,path] = uigetfile('D:\results\*.mrc','Fetch MRC file');
-%Chosen_Filename_ali=[path filename];
 flgLoadVolume=1;  % If 1 - Load in the volume data (default: 1)
 showHeader=1; %  If 1 - Print out information as the header is loaded.
 mRCImage=MRCImage;%Insentiate MRCImage in mRCImage
 mRCImage = open(mRCImage, Chosen_Filename_ali1, flgLoadVolume, showHeader);
-tilt1 = double(getVolume(mRCImage, [], [], []));
+tilt = double(getVolume(mRCImage, [], [], []));
 ntilts1 = getNZ(mRCImage);
 nX = getNX(mRCImage);
 nY = getNY(mRCImage);
 sizeXangstrom=getCellX(mRCImage);
 sizeYangstrom=sizeXangstrom;%getCellY(mRCImage) not used since it varies, but the actual is of the center angle 0
-%[filename_angles,path1] = uigetfile('D:\results\*.rawtlt','Fetch angles file');
-%Chosen_Filename_angles=[path1 filename_angles];
 fileID = fopen(Chosen_Filename_angles1,'r');
 formatSpec = '%g';
 angles1 = fscanf(fileID,formatSpec);
 fclose(fileID);
+nX=round(nX/bin);
+nY=round(nY/bin);
+tilt1=zeros(nX,nY,ntilts1);
+for n=1:ntilts1
+    tilt1(:,:,n)=imresize(tilt(:,:,n),[nX nY]);
+end
+
 
 mRCImage=MRCImage;%Insentiate MRCImage in mRCImage
 mRCImage = open(mRCImage, Chosen_Filename_ali2, flgLoadVolume, showHeader);
-tilt2 = double(getVolume(mRCImage, [], [], []));
+tilt = double(getVolume(mRCImage, [], [], []));
 ntilts2 = getNZ(mRCImage);
 nX = getNX(mRCImage);
 nY = getNY(mRCImage);
 sizeXangstrom=getCellX(mRCImage);
 sizeYangstrom=sizeXangstrom;%getCellY(mRCImage) not used since it varies, but the actual is of the center angle 0
-%[filename_angles,path1] = uigetfile('D:\results\*.rawtlt','Fetch angles file');
-%Chosen_Filename_angles=[path1 filename_angles];
 fileID = fopen(Chosen_Filename_angles2,'r');
 formatSpec = '%g';
 angles2 = fscanf(fileID,formatSpec);
 fclose(fileID);
+nX=round(nX/bin);
+nY=round(nY/bin);
+tilt2=zeros(nX,nY,ntilts2);
+for n=1:ntilts2
+    tilt2(:,:,n)=imresize(tilt(:,:,n),[nX nY]);
+end
+clear tilt;
 
 %Correct rotation
 for n=1:ntilts2
@@ -125,20 +127,22 @@ vect=1:length(angles2);
 ind2=min(vect(angles2==min(abs(angles2))));
 imag1=tilt1(:,:,ind1);
 imag2=tilt2(:,:,ind2);
-shift_limit=500;
+
+shift_limit=nX/4;
 do_filt=1;
 rshift=r_mn_rect(imag2,imag1,shift_limit,do_filt);
-%figure(3)
-%balanced_imshow(imag1);
-%figure(4)
-%balanced_imshow(imtranslate(imag2,rshift));
 for n=1:ntilts2
     imag=tilt2(:,:,n);
     imag=imtranslate(imag,rshift); %align translational shift in b image  
     tilt2(:,:,n)=imag;
 end
 
-
+figure(1);
+subplot(1,2,1);
+balanced_imshow_in(tilt1(:,:,ind1));
+subplot(1,2,2);
+balanced_imshow_in(tilt2(:,:,ind2));
+pause(0.5);
 
 %try
 %    Afiterr_all = readmatrix(Chosen_Filename_fiterr,'delimiter','\t');
@@ -146,7 +150,6 @@ end
 %catch
 fiterr1=zeros(1,length(angles1));
 fiterr2=zeros(1,length(angles2));
-%end
 
 
 %remove slices that fiterr was not between 0 and 5
@@ -174,10 +177,10 @@ angles(1:length(angles1))=angles1;
 angles(1+length(angles1):length(angles1)+length(angles2))=angles2;
 
 %Note it could crash if you lack a good GPU 
-det_row_count=round(nY/bin);
-det_col_count=round(nX/bin);
+det_row_count=nY;
+det_col_count=nX;
 sizeZangstrom=nZ*sizeXangstrom/nX;
-vol_geom = astra_create_vol_geom(nY/bin,nX/bin,nZ);
+vol_geom = astra_create_vol_geom(nY,nX,nZ);
 rec_id = astra_mex_data3d('create', '-vol', vol_geom, 0);
 proj_vectors=zeros(length(angles1)+length(angles2),12);
 for idx=1:length(angles)
@@ -244,22 +247,17 @@ proj_geom = astra_create_proj_geom('parallel3d_vec',  det_row_count, det_col_cou
 %          
 % proj_geom: MATLAB struct containing all information of the geometry
 
-proj_data_mat=zeros(nX/bin,length(angles),nY/bin);
+proj_data_mat=zeros(nX,length(angles),nY);
 %compensate for acquisition in adaptive aspect ratio
 for idx=1:length(angles)
-    %if cosine_sample
-    %numrows=round((nY/bin)*cos(angles(idx)*pi/180));
-    %else
-    %numrows=round(nY/bin);
-    %end
     if idx<=count1
         rotation_xaxis=rotation_xaxis1;
     else
         rotation_xaxis=rotation_xaxis2;
     end
 
-    numrows=round(nY/bin);
-    numcols=round(nX/bin);
+    numrows=nY;
+    numcols=nX;
     if idx<=count1
         imag=imresize(tilt1(:,:,idx),[numcols numrows]);
     else
@@ -394,7 +392,7 @@ alg_id = astra_mex_algorithm('create', cfg);
 astra_mex_algorithm('iterate', alg_id,150);
 % Get the result
 rec = astra_mex_data3d('get', rec_id);%maybe 'get_single'
-%errorP=astra_mex_algorithm('get_res_norm', alg_id)/((nX/bin)*(nY/bin)*length(angles));
+%errorP=astra_mex_algorithm('get_res_norm', alg_id)/((nX)*(nY)*length(angles));
 %Save to new MRC names rec_...
 newFilename=strrep(Chosen_Filename_ali1,'.ali.','_dual.rec_SIRT.');
 newmRCImage = MRCImage;%Instentiate MRCImage object
@@ -421,11 +419,6 @@ function r_mn=r_mn_rect(Imagem,Imagen,shift_limit,do_filt)
         Imagen=imgaussfilt(Imagen-imgaussfilt(Imagen,30),3);
     end
 
-    %figure(2);
-    %subplot(1,2,1);
-    %balanced_imshow(Imagem);
-    %subplot(1,2,2);
-    %balanced_imshow(Imagen);
     tempx=floor(0.3*size(Imagem,1));  % x are the row number, y is the col number (as observed with balanced_imshow). The rows progress along the first ordinate in Imagem/n.
     tempy=floor(0.3*size(Imagem,2));
     tempux=size(Imagem,1)-tempx;%floor(0.85*size(Imagem,1));
@@ -458,6 +451,49 @@ function r_mn=r_mn_rect(Imagem,Imagen,shift_limit,do_filt)
     yoffset2=yoffset+(ypeak2-256+30)/32;
     xoffset2=xoffset+(xpeak2-256+31)/32;
     r_mn=[yoffset2 xoffset2];
+
+
 end
 
+function OK=balanced_imshow_in(img)
+    Nshades=1024;
+    mapvector=linspace(0,1,Nshades)';
+    cmap=zeros(Nshades,3);
+    for loop=1:3
+        cmap(:,loop)=mapvector;
+    end
+    try
+        showpic2=balance(img,Nshades);
+        OK=imshow(showpic2',cmap); %Here is the built in function to show images in Matlab
+    catch
+        OK=imshow(img);
+    end
+
+    function normpic2=balance(normpic,Nshades)    
+        [BinValues,BinEdges]=histcounts(normpic,Nshades);
+        NumBins=length(BinValues);    
+        sumH=sum(BinValues);
+        temp=0;
+        lowedge=BinEdges(NumBins);
+        for n=1:NumBins-1
+            temp=temp+BinValues(n);
+            if temp>0.005*sumH
+                lowedge=BinEdges(n);
+            break;
+            end
+        end
+        temp=0;
+        highedge=BinEdges(1);
+        for n2=NumBins:-1:2
+            temp=temp+BinValues(n2);
+            if temp>0.005*sumH
+                highedge=BinEdges(n2);
+            break;
+            end
+        end
+        normpic(normpic>highedge)=highedge; %remove white dots
+        normpic(normpic<lowedge)=lowedge; %remove black dots
+        normpic2=((double(normpic)-lowedge)*Nshades)/double(highedge-lowedge);
+    end 
+end    
 

@@ -5,6 +5,7 @@ function clusteralign_astra_reconstruct(cosine_sample,phi_deg,psi_deg,Chosen_Fil
 %Requires @MRCImage library from MatTomo, PEET project: https://bio3d.colorado.edu/imod/matlab.html
 %varagin includes: Chosen_Filename_fiterr,bin,nZ
 %##### check parameters ####
+%varagin includes optional parameters: Filename.fit_err_by_slice.txt,bin,thickness.
 if ~isempty(varargin)
     Chosen_Filename_fiterr=varargin{1};
 end
@@ -82,10 +83,12 @@ end
 angles=angles(1:count);
 
 %Note it could crash if you lack a good GPU 
-det_row_count=round(nY/bin);
-det_col_count=round(nX/bin);
+nYsized=round(nY/bin);
+nXsized=round(nX/bin);
+det_row_count=nYsized;
+det_col_count=nXsized;
 sizeZangstrom=nZ*sizeXangstrom/nX;
-vol_geom = astra_create_vol_geom(nY/bin,nX/bin,nZ);
+vol_geom = astra_create_vol_geom(nYsized,nXsized,nZ);
 rec_id = astra_mex_data3d('create', '-vol', vol_geom, 0);
 proj_vectors=zeros(length(angles),12);
 for idx=1:length(angles)
@@ -149,16 +152,16 @@ proj_geom = astra_create_proj_geom('parallel3d_vec',  det_row_count, det_col_cou
 %          
 % proj_geom: MATLAB struct containing all information of the geometry
 
-proj_data_mat=zeros(nX/bin,length(angles),nY/bin);
+proj_data_mat=zeros(nXsized,length(angles),nYsized);
 %compensate for acquisition in adaptive aspect ratio
 for idx=1:length(angles)
     %if cosine_sample
-    %numrows=round((nY/bin)*cos(angles(idx)*pi/180));
+    %numrows=round((nYsized)*cos(angles(idx)*pi/180));
     %else
-    %numrows=round(nY/bin);
+    %numrows=round(nYsized);
     %end
-    numrows=round(nY/bin);
-    numcols=round(nX/bin);
+    numrows=nYsized;
+    numcols=nXsized;
     imag=imresize(tilt(:,:,idx),[numcols numrows]); 
     simag1=mean(imag(round(0.35*numcols):round(0.65*numcols),:),1);%average of every line (parallel to x axis, the rotation), so it is easy to detect margins from alignments
     del_lines=simag1(2:numrows)-simag1(1:numrows-1);
@@ -224,7 +227,7 @@ for idx=1:length(angles)
     equal_imag=croped_imag;
     %equal_imag=double(adapthisteq(equal_imag,'clipLimit',0.05,'Distribution','rayleigh'));%Contrast-limited adaptive histogram equalization (CLAHE)
     equal_imag=equal_imag-imgaussfilt(equal_imag,round(numcols/10));
-    equal_imag=(10000.0*(equal_imag-mean(equal_imag(:)))/std(equal_imag(:)));
+    equal_imag=(10000.0*(equal_imag-mean(equal_imag(:))));%/std(equal_imag(:)));
     imag=zeros(size(imag));
     imag(margin_col1:margin_col2,margin_row1:margin_row2)=equal_imag; 
 
@@ -289,7 +292,7 @@ alg_id = astra_mex_algorithm('create', cfg);
 astra_mex_algorithm('iterate', alg_id,150);
 % Get the result
 rec = astra_mex_data3d('get', rec_id);%maybe 'get_single'
-%errorP=astra_mex_algorithm('get_res_norm', alg_id)/((nX/bin)*(nY/bin)*length(angles));
+%errorP=astra_mex_algorithm('get_res_norm', alg_id)/((nXsized)*(nYsized)*length(angles));
 %Save to new MRC names rec_...
 newFilename=strrep(Chosen_Filename_ali,'.ali.','.rec_SIRT.');
 newmRCImage = MRCImage;%Instentiate MRCImage object

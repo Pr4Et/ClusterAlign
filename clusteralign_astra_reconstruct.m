@@ -294,7 +294,15 @@ astra_mex_algorithm('iterate', alg_id,150);
 rec = astra_mex_data3d('get', rec_id);%maybe 'get_single'
 %errorP=astra_mex_algorithm('get_res_norm', alg_id)/((nXsized)*(nYsized)*length(angles));
 %Save to new MRC names rec_...
-newFilename=strrep(Chosen_Filename_ali,'.ali.','.rec_SIRT.');
+if contains(Chosen_Filename_ali,'.jali.')
+    newFilename=strrep(Chosen_Filename_ali,'.jali.','.rec_SIRT.');
+elseif contains(Chosen_Filename_ali,'.ali.')
+    newFilename=strrep(Chosen_Filename_ali,'.ali.','.rec_SIRT.');
+elseif contains(Chosen_Filename_ali,'.mrc')
+    newFilename=strrep(Chosen_Filename_ali,'.mrc','.rec_SIRT.mrc');
+else
+    newFilename=[Chosen_Filename_ali '.rec_SIRT.mrc'];
+end
 newmRCImage = MRCImage;%Instentiate MRCImage object
 newmRCImage.filename=newFilename;
 newmRCImage = setVolume(newmRCImage, rec); %enter to newmRCImage, do statistics, and fill many details to the header

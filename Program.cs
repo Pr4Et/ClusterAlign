@@ -32,7 +32,7 @@ namespace ClusterAlign
 {
     public class Program
     {
-        static String Version_information = "ClusterAlign (ver 2021-Mar-16).";
+        static String Version_information = "ClusterAlign (ver 2022-May-8).";
         static bool xisRotation = ClusterAlign.Settings4ClusterAlign2.Default.xisRotation;
         static svector[] match_tolerance;
         static int cluster_size = ClusterAlign.Settings4ClusterAlign2.Default.cluster_size; //max radius of a single cluster
@@ -62,8 +62,8 @@ namespace ClusterAlign
             string FileName = path + slash + ClusterAlign.Settings4ClusterAlign2.Default.DataFileName; //dataset, may be tif or mrc
             string FidFileName = path + slash + Path.GetFileNameWithoutExtension(FileName)+ ".fid.txt";
             string NogapsFidFileName = path + slash + Path.GetFileNameWithoutExtension(FileName) + ".nogaps.fid.txt";
-            string out_filename = path + slash + Path.GetFileNameWithoutExtension(FileName) + ".ali.mrc";
-            string normout_filename = path + slash + Path.GetFileNameWithoutExtension(FileName) + ".normal-ali.mrc";
+            string out_filename = path + slash + Path.GetFileNameWithoutExtension(FileName) + ".jali.mrc"; //our own ali files, just aligned mrc files, preferable if you use our reconstruction
+            string normout_filename = path + slash + Path.GetFileNameWithoutExtension(FileName) + ".ali.mrc"; //both aligned and rotation axis in vertical direciton according to IMOD convention
             string showcluster_filename = path + slash + Path.GetFileNameWithoutExtension(FileName) + ".clusters.mrc";
             string report_filename = path + slash + Path.GetFileNameWithoutExtension(FileName) + ".output.txt";
             string basefilename = path + slash + Path.GetFileNameWithoutExtension(FileName);
@@ -1204,12 +1204,12 @@ namespace ClusterAlign
                 MrcStack myMrcStack = new MrcStack();
                 if (!Settings4ClusterAlign2.Default.export_normalali)
                 {
-                    Console.WriteLine("Saving ali file ..");
+                    Console.WriteLine("Saving ali file (.jali.mrc) ..");
                     myMrcStack.Fexport(FileName, out_filename, ref Dx_vect, ref Dy_vect, ref report_phi);
                 }
                 else
                 {
-                    Console.WriteLine("Saving normal-ali file for 3rd party software ..");
+                    Console.WriteLine("Saving normal ali file for 3rd party software ..");
                     myMrcStack.Fexport(FileName, normout_filename, ref Dx_vect, ref Dy_vect, ref report_phi);
                 }
 

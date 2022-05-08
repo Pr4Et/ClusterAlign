@@ -327,7 +327,7 @@ for idx=1:length(angles)
     equal_imag=croped_imag;
     %equal_imag=double(adapthisteq(equal_imag,'clipLimit',0.05,'Distribution','rayleigh'));%Contrast-limited adaptive histogram equalization (CLAHE)
     equal_imag=equal_imag-imgaussfilt(equal_imag,round(numcols/10));
-    equal_imag=(10000.0*(equal_imag-mean(equal_imag(:)))/std(equal_imag(:)));
+    equal_imag=(10000.0*(equal_imag-mean(equal_imag(:))));
     imag=zeros(size(imag));
     imag(margin_col1:margin_col2,margin_row1:margin_row2)=equal_imag; 
 
@@ -394,7 +394,15 @@ astra_mex_algorithm('iterate', alg_id,150);
 rec = astra_mex_data3d('get', rec_id);%maybe 'get_single'
 %errorP=astra_mex_algorithm('get_res_norm', alg_id)/((nX)*(nY)*length(angles));
 %Save to new MRC names rec_...
-newFilename=strrep(Chosen_Filename_ali1,'.ali.','_dual.rec_SIRT.');
+if contains(Chosen_Filename_ali1, '.jali.')
+    newFilename=strrep(Chosen_Filename_ali1,'.jali.','_dual.rec_SIRT.');
+elseif contains(Chosen_Filename_ali1, '.ali.')
+    newFilename=strrep(Chosen_Filename_ali1,'.ali.','_dual.rec_SIRT.');
+elseif contains(Chosen_Filename_ali1, '.mrc')
+    newFilename=strrep(Chosen_Filename_ali1,'.mrc','_dual.rec_SIRT.mrc');
+else
+    newFilename=[Chosen_Filename_ali1 '_dual.rec_SIRT.mrc'];
+end
 newmRCImage = MRCImage;%Instentiate MRCImage object
 newmRCImage.filename=newFilename;
 newmRCImage = setVolume(newmRCImage, rec); %enter to newmRCImage, do statistics, and fill many details to the header

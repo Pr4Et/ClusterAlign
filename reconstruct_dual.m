@@ -394,14 +394,14 @@ astra_mex_algorithm('iterate', alg_id,150);
 rec = astra_mex_data3d('get', rec_id);%maybe 'get_single'
 %errorP=astra_mex_algorithm('get_res_norm', alg_id)/((nX)*(nY)*length(angles));
 %Save to new MRC names rec_...
-if contains(Chosen_Filename_ali1, '.jali.')
-    newFilename=strrep(Chosen_Filename_ali1,'.jali.','_dual.rec_SIRT.');
-elseif contains(Chosen_Filename_ali1, '.ali.')
-    newFilename=strrep(Chosen_Filename_ali1,'.ali.','_dual.rec_SIRT.');
+if contains(Chosen_Filename_ali1, '_jali.mrc')
+    newFilename=strrep(Chosen_Filename_ali1,'_jali.mrc','_dual_rec_SIRT.mrc');
+elseif contains(Chosen_Filename_ali1, '_ali.mrc')
+    newFilename=strrep(Chosen_Filename_ali1,'_ali.mrc','_dual_rec_SIRT.mrc');
 elseif contains(Chosen_Filename_ali1, '.mrc')
-    newFilename=strrep(Chosen_Filename_ali1,'.mrc','_dual.rec_SIRT.mrc');
+    newFilename=strrep(Chosen_Filename_ali1,'.mrc','_dual_rec_SIRT.mrc');
 else
-    newFilename=[Chosen_Filename_ali1 '_dual.rec_SIRT.mrc'];
+    newFilename=[Chosen_Filename_ali1 '_dual_rec_SIRT.mrc'];
 end
 newmRCImage = MRCImage;%Instentiate MRCImage object
 newmRCImage.filename=newFilename;

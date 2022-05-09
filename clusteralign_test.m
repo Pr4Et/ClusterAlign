@@ -320,18 +320,12 @@ for idx=1:length(angles)
     pause(1);
 end
 
-if contains(Chosen_Filename,'jali.')
-    if strcmp(strrep(Chosen_Filename,'jali.mrc',''),Chosen_Filename)
-        Chosen_Filename_base=strrep(Chosen_Filename,'.mrc','.ex');
-    else
-        Chosen_Filename_base=strrep(Chosen_Filename,'jali.mrc','');
-    end
+if contains(Chosen_Filename,'_jali.mrc')
+    Chosen_Filename_base=strrep(Chosen_Filename,'_jali.mrc','');
+elseif contains(Chosen_Filename,'_ali.mrc')
+    Chosen_Filename_base=strrep(Chosen_Filename,'_ali.mrc','');
 else
-    if strcmp(strrep(Chosen_Filename,'ali.mrc',''),Chosen_Filename)
-        Chosen_Filename_base=strrep(Chosen_Filename,'.mrc','.ex');
-    else
-        Chosen_Filename_base=strrep(Chosen_Filename,'ali.mrc','');
-    end
+    Chosen_Filename_base=strrep(Chosen_Filename,'.mrc','_ex');
 end
 
 writematrix(err_vector,[Chosen_Filename_base '.clusteralign_err.csv']) 

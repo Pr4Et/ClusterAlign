@@ -26,6 +26,7 @@ else
     nZ=400; %thickness (in pixels after binning)  
 end
 
+mrg=0.1;
 max_fiterr=15;
 %###########################
 gpu = gpuDevice();
@@ -109,17 +110,17 @@ for idx=1:length(angles)
         if rotation_xaxis
             vX=0;    %for row shift of one pixel in the detector actual:(0,1)
             vY=cos(angles(idx)*pi/180)*cos(angles(idx)*pi/180);
-            vZ=-sin(angles(idx)*pi/180)*cos(angles(idx)*pi/180);
+            vZ=-sin(angles(idx)*pi/180)*cos(angles(idx)*pi/180)*sign(phi);
         else
             uY=0;    %for row shift of one pixel in the detector actual:(1,0)
             uX=cos(angles(idx)*pi/180)*cos(angles(idx)*pi/180);
             uZ=-sin(angles(idx)*pi/180)*cos(angles(idx)*pi/180);
         end
     else
-        if rotation_xaxis
+        if rotation_xaxis %case of phi near 90 or -90 degrees
             vX=0;    %for row shift of one pixel in the detector actual:(0,1)
             vY=cos(angles(idx)*pi/180);
-            vZ=-sin(angles(idx)*pi/180);
+            vZ=-sin(angles(idx)*pi/180)*sign(phi);
         else
             uX=cos(angles(idx)*pi/180);    
             uY=0;
@@ -137,7 +138,7 @@ for idx=1:length(angles)
     end
     proj_vectors(idx,:)=[rayX rayY rayZ dX dY dZ uX uY uZ vX vY vZ];
 end
-proj_geom = astra_create_proj_geom('parallel3d_vec',  det_row_count, det_col_count, proj_vectors);
+proj_geom = astra_create_proj_geom('parallel3d_vec',  det_row_count+2*round(mrg*nYsized), det_col_count+2*round(mrg*nXsized), proj_vectors);
 %
 % Create a 3D parallel beam geometry specified by 3D vectors.
 % det_row_count: number of detector rows in a single projection
@@ -152,7 +153,8 @@ proj_geom = astra_create_proj_geom('parallel3d_vec',  det_row_count, det_col_cou
 %          
 % proj_geom: MATLAB struct containing all information of the geometry
 
-proj_data_mat=zeros(nXsized,length(angles),nYsized);
+proj_data_mat=zeros(nXsized+2*round(mrg*nXsized),length(angles),nYsized+2*round(mrg*nYsized));
+
 %compensate for acquisition in adaptive aspect ratio
 for idx=1:length(angles)
     %if cosine_sample
@@ -221,54 +223,57 @@ for idx=1:length(angles)
     else
         margin_col2=numcols;
     end
-    
+
+        %erode more from the edges
+    margin_col1=margin_col1+round(nXsized/40);
+    margin_col2=margin_col2-round(nXsized/40);
+    margin_row1=margin_row1+round(nYsized/40);
+    margin_row2=margin_row2-round(nYsized/40);
+
     %normalize image intensity 
     croped_imag=imag(margin_col1:margin_col2,margin_row1:margin_row2);
-    equal_imag=croped_imag;
-    %equal_imag=double(adapthisteq(equal_imag,'clipLimit',0.05,'Distribution','rayleigh'));%Contrast-limited adaptive histogram equalization (CLAHE)
-    equal_imag=equal_imag-imgaussfilt(equal_imag,round(numcols/10));
-    equal_imag=(10000.0*(equal_imag-mean(equal_imag(:))));%/std(equal_imag(:)));
+    croped_imag=10000*(croped_imag-imgaussfilt(croped_imag,round(numcols/40)));
     imag=zeros(size(imag));
-    imag(margin_col1:margin_col2,margin_row1:margin_row2)=equal_imag; 
-
-    imfull=imag;
-    if ~cosine_sample && rotation_xaxis
-    margin_up=max(margin_row1,1+round(round(numrows/2)*(1-cos(angles(idx)*pi/180))));
-    margin_down=min(margin_row2,round(round(numrows/2)*(1+cos(angles(idx)*pi/180))));
-    else
+    imag(margin_col1:margin_col2,margin_row1:margin_row2)=croped_imag; 
     margin_up=margin_row1;
     margin_down=margin_row2;
-    end
-
-    if ~cosine_sample && ~rotation_xaxis
-    margin_left=max(margin_col1,1+round(round(numcols/2)*(1-cos(angles(idx)*pi/180))));
-    margin_right=min(margin_col2,round(round(numcols/2)*(1+cos(angles(idx)*pi/180))));
-    else
     margin_left=margin_col1;
     margin_right=margin_col2;
+
+    imfull=zeros(nXsized+2*round(mrg*nXsized),nYsized+2*round(mrg*nYsized));
+    imfull(margin_left+round(mrg*nXsized):margin_right+round(mrg*nXsized),margin_up+round(mrg*nYsized):margin_down+round(mrg*nYsized))=imag(margin_left:margin_right,margin_up:margin_down);
+    imfull_temp=imfull;
+    %Fill in the margins by mirror image of the inside content
+    imfull(1:margin_left+round(mrg*nXsized)+1,:)=imfull_temp(2*margin_left+2*round(mrg*nXsized)+2:-1:margin_left+round(mrg*nXsized)+2,:);
+    imfull(margin_right+round(mrg*nXsized)-1:nXsized+2*round(mrg*nXsized),:)=imfull_temp(margin_right+round(mrg*nXsized)-2:-1:2*margin_right-nXsized-3,:);
+    imfull_temp=imfull;
+    imfull(:,1:margin_up+round(mrg*nYsized)+1)=imfull_temp(:,2*margin_up+2*round(mrg*nYsized)+2:-1:margin_up+round(mrg*nYsized)+2);
+    imfull(:,margin_down+round(mrg*nYsized)-1:nYsized+2*round(mrg*nYsized))=imfull_temp(:,margin_down+round(mrg*nYsized)-2:-1:2*margin_down-nYsized-3);
+
+    if ~cosine_sample && rotation_xaxis
+        margin_up=max(margin_row1,1+round(round(numrows/2)*(1-cos(angles(idx)*pi/180))));
+        margin_down=min(margin_row2,round(round(numrows/2)*(1+cos(angles(idx)*pi/180))));
+    end
+    if ~cosine_sample && ~rotation_xaxis
+        margin_left=max(margin_col1,1+round(round(numcols/2)*(1-cos(angles(idx)*pi/180))));
+        margin_right=min(margin_col2,round(round(numcols/2)*(1+cos(angles(idx)*pi/180))));
+    end
+    %Tapping unimportant regions
+    imfull_temp=imfull;
+    for n=1:margin_up+round(mrg*nYsized)
+        imfull(:,n)=imfull_temp(:,n)*double(n/(margin_up+round(mrg*nYsized))).^4;
+    end
+    for n=margin_down+round(mrg*nYsized):numrows+2*round(mrg*nYsized)
+        imfull(:,n)=imfull_temp(:,n)*double((numrows+2*round(mrg*nYsized)-n)/(numrows+round(mrg*nYsized)-margin_down)).^4;
+    end
+    imfull_temp=imfull;
+    for n=1:margin_left+round(mrg*nXsized)
+        imfull(n,:)=imfull_temp(n,:)*double(n/(margin_left+round(mrg*nXsized))).^4;
+    end
+    for n=margin_right+round(mrg*nXsized):numcols+2*round(mrg*nXsized)
+        imfull(n,:)=imfull_temp(n,:)*double((numcols+2*round(mrg*nXsized)-n)/(numcols+round(mrg*nXsized)-margin_right)).^4;
     end
 
-    %Tapping unimportant regions
-    if margin_up>1
-        for n=1:margin_up
-            imfull(:,n)=imag(:,n)*double(n/margin_up);
-        end
-    end
-    if margin_down<numrows
-        for n=margin_down:numrows
-            imfull(:,n)=imag(:,n)*double((numrows-n)/(numrows-margin_down));
-        end
-    end
-    if margin_left>1
-        for n=1:margin_left
-            imfull(n,:)=imag(n,:)*double(n/margin_left);
-        end
-    end
-    if margin_right<numcols
-        for n=margin_right:numcols
-            imfull(n,:)=imag(n,:)*double((numcols-n)/(numcols-margin_right));
-        end
-    end
 
 
     %figure(1)

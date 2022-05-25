@@ -208,7 +208,7 @@ for idx=1:length(angles)
         if rotation_xaxis
             vX=0;    %for row shift of one pixel in the detector actual:(0,1)
             vY=cos(angles(idx)*pi/180)*cos(angles(idx)*pi/180);
-            vZ=-sin(angles(idx)*pi/180)*cos(angles(idx)*pi/180);
+            vZ=-sin(angles(idx)*pi/180)*cos(angles(idx)*pi/180)*sign(phi);
         else
             uY=0;    %for row shift of one pixel in the detector actual:(1,0)
             uX=cos(angles(idx)*pi/180)*cos(angles(idx)*pi/180);
@@ -332,7 +332,7 @@ for idx=1:length(angles)
         margin_col2=numcols;
     end
     
-    %errode more from the edges
+    %erode more from the edges
     margin_col1=margin_col1+round(nX/40);
     margin_col2=margin_col2-round(nX/40);
     margin_row1=margin_row1+round(nY/40);

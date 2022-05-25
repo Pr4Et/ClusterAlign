@@ -267,7 +267,8 @@ public const int MRC_CFLOAT_AMP_RAD = 21;        /* COMPLEX FLOAT mode, but in a
                     dstTri[2] = new PointF(0.5f * ny + MathF.Cos(-phi) * (y2 - 0.5f*ny) - MathF.Sin(-phi) * (x2 - 0.5f*nx), 0.5f*nx + MathF.Cos(-phi) * (x2 - 0.5f*nx) + MathF.Sin(-phi) * (y2 - 0.5f*ny));
                 }
                 Mat warp_mat = CvInvoke.GetAffineTransform(srcTri, dstTri);
-                CvInvoke.WarpAffine(slice, slice, warp_mat, slice.Size);
+                MCvScalar border_shade=CvInvoke.Mean(slice);
+                CvInvoke.WarpAffine(slice, slice, warp_mat, slice.Size,Inter.Linear,Warp.Default, BorderType.Constant,border_shade);
                 WriteImage(i, slice);
             }
             infile.Close();
@@ -275,75 +276,7 @@ public const int MRC_CFLOAT_AMP_RAD = 21;        /* COMPLEX FLOAT mode, but in a
             //return true;
         }
 
-        //old unused function
-        public unsafe void Fvisualize(string ref_filename, string out_filename, ref double[] Dx_vect, ref double[] Dy_vect, ref int[,] fidx, ref int[,] fidy, ref int[,] fidn, ref int[,] friend, int fid_count, int Ncandidates, int ncenter)
-        {
-            outfile = File.OpenWrite(out_filename);
-            byte[] arr = new byte[headersize];
-            infile = File.OpenRead(ref_filename);
-            infile.Read(arr, 0, headersize); //read into header
-            fixed (byte* byteptr = readheader.inbytes)
-            { Marshal.Copy(arr, 0, new IntPtr(byteptr), headersize); } //Marshal.Copy(byte[] source, int startIndex, IntPtr destination, int length);
-            int nx = readheader.header.nx;
-            int ny = readheader.header.ny;
-            infile.Close();
-            infile = File.OpenRead(ref_filename);
-            byte[] outarr = new byte[headersize + readheader.header.next];
-            infile.Read(outarr, 0, headersize + readheader.header.next); //read into header
-            outfile.Write(outarr, 0, headersize + readheader.header.next); //read into header
-
-            Mat slice;
-            Mat warpMat = new Mat(2, 3, DepthType.Cv32F, 1);
-            //CvInvoke.GetRotationMatrix2D(new PointF((float)0.5*ny,(float)0.5*nx), 0, 1, warpMat);//center, angle, scale
-            PointF[] srcTri = new PointF[3];
-            PointF[] dstTri = new PointF[3];
-            int p1x=0, p1y=0, p2x=0, p2y=0,other_n=0;
-            MCvScalar myred = new MCvScalar(0, 0, 0xFF);
-
-            for (uint i = 0; i < readheader.header.nz; i++)
-            {
-                slice = ReadImage(i);
-                srcTri[0] = new PointF((float)0.25 * ny, (float)0.25 * nx);
-                srcTri[1] = new PointF((float)0.25 * ny, (float)0.75 * nx);
-                srcTri[2] = new PointF((float)0.75 * ny, (float)0.75 * nx);
-                dstTri[0] = new PointF((float)0.25 * ny + (float)Dy_vect[i], (float)0.25 * nx + (float)Dx_vect[i]);
-                dstTri[1] = new PointF((float)0.25 * ny + (float)Dy_vect[i], (float)0.75 * nx + (float)Dx_vect[i]);
-                dstTri[2] = new PointF((float)0.75 * ny + (float)Dy_vect[i], (float)0.75 * nx + (float)Dx_vect[i]);
-                Mat warp_mat = CvInvoke.GetAffineTransform(srcTri, dstTri);
-                //was here before: CvInvoke.WarpAffine(slice, slice, warp_mat, slice.Size);
-                // Add lines in image slice between nodes of cluster members
-                //point1= fidx[i,n], point2=fidx[i,find{friend[fidn[n],m]}], friend[fidn[n],0] stores how many m
-                for (int n=0;n< fid_count; n++) //scan matched fiducials
-                {
-                    if (fidx[i, n] <= 0 || fidy[i, n] <= 0 || fidn[ncenter, n]==0) continue;
-                    p1x = fidx[i, n];// - (int)Dx_vect[i];
-                    p1y = fidy[i, n];// + (int)Dy_vect[i];
-                    for (int m = 1; m <= friend[fidn[ncenter, n], 0]; m++)
-                    {
-                        other_n = -1;
-                        for (int ntag=0; ntag< fid_count; ntag++)
-                        {
-                            if (friend[fidn[ncenter,n], m]==fidn[ncenter,ntag]) //locate friend in fid tables according to original index of fiducial at ncenter slice
-                            {
-                                other_n = ntag;
-                            }
-                        }
-                        if (other_n >= 0 && fidx[i, other_n]>0)
-                        {
-                            p2x = fidx[i, other_n];// - (int)Dx_vect[i];
-                            p2y = fidy[i, other_n];// + (int)Dy_vect[i];
-                            CvInvoke.Line(slice, new Point(p1x, p1y), new Point(p2x, p2y), myred,2,LineType.AntiAlias); 
-                        }
-                    }
-                }
-                CvInvoke.WarpAffine(slice, slice, warp_mat, slice.Size);
-                WriteImage(i, slice);
-            }
-            infile.Close();
-            outfile.Close();
-            //return true;
-        }
-
+ 
         private void WriteImage(uint index, Mat slice)
         {
             int nx = readheader.header.nx;
@@ -442,7 +375,7 @@ public const int MRC_CFLOAT_AMP_RAD = 21;        /* COMPLEX FLOAT mode, but in a
             Size size=new Size(readheader.header.nx, readheader.header.ny);
 
  
-            IntPtr imptr= CvInvoke.cvCreateMat(ny, nx, DepthType.Cv32F);
+            IntPtr imptr= CvInvoke.cvCreateMat(nx, ny, DepthType.Cv32F);
 
             int bufsize = readheader.header.nx * readheader.header.ny;
 

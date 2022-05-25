@@ -97,7 +97,7 @@ namespace ClusterAlign
                 {
                     if (ns - 1 == ncenter)
                     {
-                        Fx[p - 1, ns - 1] = ((double)fidx[ns - 1, p - 1] - xc0) * xfactor[ns-1];
+                        Fx[p - 1, ns - 1] = ((double)fidx[ns - 1, p - 1] - xc0) * xfactor[ns-1];  //make aspect ration normal to make eligible for rotation transformations
                         Fy[p - 1, ns - 1] = ((double)fidy[ns - 1, p - 1] - yc0) * yfactor[ns-1];
                     }
                     else
@@ -135,7 +135,9 @@ namespace ClusterAlign
             }
             Dx_vect.CopyTo(previter_Dx_vect, 0);//learn from previous rounds
             Dy_vect.CopyTo(previter_Dy_vect, 0);
-            
+
+            int found_gdx = 0;
+            int found_gdy = 0;
 
             Array.Clear(zcenter,0, contours); //Start afresh each time, although at the end we publish z0values so matching could improve with iterations
             for (int iteration = 1; iteration <=2; iteration++) //was 4 iterations
@@ -178,8 +180,8 @@ namespace ClusterAlign
                                                 theta = theta_vec[ns - 1]  - Theta0;
                                                 Amat(theta, phi, psi, ref a, ref b, ref c, ref d, ref e, ref f, ref g, ref h, ref i);
                                                 Inv(a, b, c, d, e, f, g, h, i, ref in_a, ref in_b, ref in_c, ref in_d, ref in_e, ref in_f, ref in_g, ref in_h, ref in_i);
-                                                z0temp1 = (Fx[p - 1, ns - 1] + previter_Dx_vect[ns - 1]) - a * previter_xcenter[p - 1] - b * previter_ycenter[p - 1];
-                                                z0temp2 = (Fy[p - 1, ns - 1] + previter_Dy_vect[ns - 1]) - d * previter_xcenter[p - 1] - e * previter_ycenter[p - 1];
+                                                z0temp1 = (Fx[p - 1, ns - 1] + previter_Dx_vect[ns - 1]) - a * (previter_xcenter[p - 1]) - b * (previter_ycenter[p - 1]);
+                                                z0temp2 = (Fy[p - 1, ns - 1] + previter_Dy_vect[ns - 1]) - d * (previter_xcenter[p - 1])- e * (previter_ycenter[p - 1]);
                                                 if (Math.Pow(c, 2) + Math.Pow(f, 2) > 0)
                                                 {
                                                     vector_z0p[z0count] = (c * z0temp1 + f * z0temp2) / (Math.Pow(c, 2) + Math.Pow(f, 2));
@@ -206,8 +208,8 @@ namespace ClusterAlign
                                 for (int p = 1; p <= contours; p++)
                                 {
                                     z_ncenter = i * zcenter[p - 1];
-                                    xcenter[p - 1] = in_a * (Fx[p - 1, ncenter]) + in_b * (Fy[p - 1, ncenter]) + in_c * z_ncenter;
-                                    ycenter[p - 1] = in_d * (Fx[p - 1, ncenter] )+ in_e * (Fy[p - 1, ncenter]) + in_f * z_ncenter;
+                                    xcenter[p - 1] = in_a * (Fx[p - 1, ncenter]) + in_b * (Fy[p - 1, ncenter]) + in_c * z_ncenter + found_gdx;
+                                    ycenter[p - 1] = in_d * (Fx[p - 1, ncenter] )+ in_e * (Fy[p - 1, ncenter]) + in_f * z_ncenter + found_gdy;
                                 }
                                 // the solved for vairables are in a vector V: Dx[1] Dy[1]..Dx[S] Dy[s]
                                 int Vcount,Vsubcount;
@@ -343,13 +345,66 @@ namespace ClusterAlign
                 for (int p = 1; p <= contours; p++)
                 {
                     z_ncenter = i * zcenter[p - 1];
-                    previter_xcenter[p - 1] = in_a * Fx[p - 1, ncenter] + in_b * Fy[p - 1, ncenter] + in_c * z_ncenter;
-                    previter_ycenter[p - 1] = in_d * Fx[p - 1, ncenter] + in_e * Fy[p - 1, ncenter] + in_f * z_ncenter;
+                    previter_xcenter[p - 1] = in_a * Fx[p - 1, ncenter] + in_b * Fy[p - 1, ncenter] + in_c * z_ncenter + found_gdx;
+                    previter_ycenter[p - 1] = in_d * Fx[p - 1, ncenter] + in_e * Fy[p - 1, ncenter] + in_f * z_ncenter + found_gdy;
                     previter_zcenter[p - 1] = zcenter[p - 1];
                 }
 
- 
 
+                //optimize cener slice shift 
+                int best_gdx = 0;
+                int best_gdy = 0;
+                double best_gerr = 1000;
+                double temp_gerr;
+                for (int gdx = -(int)(Math.Abs(Math.Cos(phi)) * PreAlignmentTolx); gdx <= (int)(Math.Abs(Math.Cos(phi)) * PreAlignmentTolx); gdx++)
+                {
+                    for (int gdy = -(int)(Math.Abs(Math.Sin(phi)) * PreAlignmentToly); gdy <= (int)(Math.Abs(Math.Sin(phi))* PreAlignmentToly); gdy++)
+                    {
+                        sumerror = 0;
+                        count = 0;
+                        for (int ns = 1; ns <= S; ns++)
+                        {
+                            if (ns - 1 == ncenter) continue;
+                            theta = theta_vec[ns - 1] + Theta_shift - Theta0;
+                            Amat(theta, phi, psi, ref a, ref b, ref c, ref d, ref e, ref f, ref g, ref h, ref i);
+                            Inv(a, b, c, d, e, f, g, h, i, ref in_a, ref in_b, ref in_c, ref in_d, ref in_e, ref in_f, ref in_g, ref in_h, ref in_i);
+                            Dx = previter_Dx_vect[ns - 1];
+                            Dy = previter_Dy_vect[ns - 1];
+                            for (int p = 1; p <= contours; p++)
+                            {
+                                xsim = a * (previter_xcenter[p - 1]+gdx) + b * (previter_ycenter[p - 1]+gdy) + c * previter_zcenter[p - 1];
+                                ysim = d * (previter_xcenter[p - 1]+gdx) + e * (previter_ycenter[p - 1]+gdy)+ f * previter_zcenter[p - 1];
+                                //zsim = g * previter_xcenter[p - 1] + h * previter_ycenter[p - 1] + i * previter_zcenter[p - 1];
+                                if (fidn[ns - 1, p - 1] >= 0 && fidn[ncenter, p - 1] >= 0)
+                                {
+                                    error2 = Math.Pow((Fx[p - 1, ns - 1] + Dx+gdx - xsim), 2) + Math.Pow((Fy[p - 1, ns - 1] + Dy+gdy - ysim), 2);
+                                    sumerror = sumerror + error2;
+                                    count = count + 1;
+                                }
+                            }
+                        }
+                        temp_gerr = Math.Sqrt(sumerror / count) + 0.02 * Math.Sqrt(gdx * gdx + gdy * gdy);
+                        if (temp_gerr < best_gerr)
+                        {
+                            best_gerr = temp_gerr;
+                            best_gdx = gdx;
+                            best_gdy = gdy;
+                        }
+                    }
+                }
+                found_gdx = best_gdx;
+                found_gdy = best_gdy;
+                Console.WriteLine("global dx={0:0}, dy={1:0}", found_gdx, found_gdy);
+                for (int p = 1; p <= contours; p++)
+                {
+                    previter_xcenter[p - 1] = previter_xcenter[p - 1] + found_gdx;
+                    previter_ycenter[p - 1] = previter_ycenter[p - 1] + found_gdy;
+                }
+                for (int ns = 1; ns <= S; ns++)
+                {
+                    previter_Dx_vect[ns - 1] = previter_Dx_vect[ns - 1] + found_gdx;
+                    previter_Dy_vect[ns - 1] = previter_Dy_vect[ns - 1] + found_gdy;
+                }
 
 
             } //for iteration
@@ -358,7 +413,7 @@ namespace ClusterAlign
             report_phi = phi;
             report_psi = psi;
 
-
+ 
             previter_xcenter.CopyTo(xcenter, 0);
             previter_ycenter.CopyTo(ycenter, 0);
             previter_zcenter.CopyTo(zcenter, 0);
@@ -369,6 +424,12 @@ namespace ClusterAlign
             previter_Dx_vect.CopyTo(Dx_vect, 0);//store results in permanent vectors
             previter_Dy_vect.CopyTo(Dy_vect, 0);
 
+            //correct back to aspect ratio of original images
+            for (int ns = 1; ns <= S; ns++)
+            {
+                Dx_vect[ns - 1] = Dx_vect[ns - 1] / xfactor[ns - 1];
+                Dy_vect[ns - 1] = Dy_vect[ns - 1] / yfactor[ns - 1];
+            }
             //write_testfile(ref z0vect, "D:\\results\\z0vect.txt");
             write_testfile(ref xcenter, basefilename + ".xcenter.txt");
             write_testfile(ref ycenter, basefilename + ".ycenter.txt");
@@ -376,12 +437,6 @@ namespace ClusterAlign
             write_testfile(ref Dx_vect, basefilename + ".Dx.txt");
             write_testfile(ref Dy_vect, basefilename + ".Dy.txt");
 
-            //correct back to aspect ratio of images
-            for (int ns = 1; ns <= S; ns++)
-            {
-                Dx_vect[ns - 1] = Dx_vect[ns - 1]/xfactor[ns-1];
-                Dy_vect[ns - 1] = Dy_vect[ns - 1]/yfactor[ns-1];
-            }
             //Fill Bfinal table
             int cont, slice;
             for (int n = 0; n <= S * contours - 1; n++)
@@ -429,7 +484,7 @@ namespace ClusterAlign
                     }
                     else //if points of FX/Fy do exit, then calculate error
                     {
-                        error2 = Math.Pow((Fx[p - 1, ns - 1] + Dx_vect[ns - 1] - xsim), 2) + Math.Pow((Fy[p - 1, ns - 1] + Dy_vect[ns - 1] - ysim), 2);
+                        error2 = Math.Pow((Fx[p - 1, ns - 1] + Dx*xfactor[ns - 1] - xsim), 2) + Math.Pow((Fy[p - 1, ns - 1] + Dy * yfactor[ns - 1] - ysim), 2);
                         sumerror = sumerror + error2;
                         count = count + 1;
                     }

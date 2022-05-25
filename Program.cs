@@ -32,7 +32,7 @@ namespace ClusterAlign
 {
     public class Program
     {
-        static String Version_information = "ClusterAlign (ver 2022-May-9).";
+        static String Version_information = "ClusterAlign (ver 2022-May-24).";
         static bool xisRotation = ClusterAlign.Settings4ClusterAlign2.Default.xisRotation;
         static svector[] match_tolerance;
         static int cluster_size = ClusterAlign.Settings4ClusterAlign2.Default.cluster_size; //max radius of a single cluster
@@ -252,7 +252,12 @@ namespace ClusterAlign
             int[] NFid = new int[Nslices];
             int Nrows = slices[0].Rows;
             int Ncols = slices[0].Cols;
-
+            if (isMRCfile) //is going to be transposed
+            {
+                int Nstore= Nrows;
+                Nrows = Ncols;
+                Ncols = Nstore;
+            }
             Mat slice_mat = new Mat(Nrows, Ncols, DepthType.Cv32F, 1);
             Mat Attention_slice_mat = new Mat(Nrows, Ncols, DepthType.Cv32F, 1);
             Mat matbuffer = new Mat(Nrows, Ncols, DepthType.Cv32F, 1);
@@ -330,12 +335,13 @@ namespace ClusterAlign
             Mat ex_Sptkmask = CvInvoke.GetStructuringElement(ElementShape.Ellipse, new Size(SptKerSize, SptKerSize), new Point(SptHKerSize, SptHKerSize));
             Mat ex_SptkmaskOut = CvInvoke.GetStructuringElement(ElementShape.Ellipse, new Size(SptKerSizeOut, SptKerSizeOut), new Point(SptHKerSizeOut, SptHKerSizeOut));
             Mat ex_symask = CvInvoke.GetStructuringElement(ElementShape.Ellipse, new Size(KerSize, KerSize), new Point(HKerSize, HKerSize));
+            Mat ex_3by3 = CvInvoke.GetStructuringElement(ElementShape.Ellipse, new Size(3, 3), new Point(2, 2));
             Mat ex_kerx = new Mat(KerSize, KerSize, DepthType.Cv32F, 1); 
             Mat ex_kery = new Mat(KerSize, KerSize, DepthType.Cv32F, 1);
             Size sayzero = new Size(0, 0);
             kmask_area =(int)(3.14F* HKerSize* HKerSize);
             int ex_kmask_area;
-            int low_pass_size;
+            int high_pass_size;
             string win1;
             svectors = new svector[Nslices, NfidMax * NfidMax];
             svectors_radius = new int[Nslices, NfidMax * NfidMax];
@@ -420,10 +426,13 @@ namespace ClusterAlign
 
                     MCvScalar find_mean = new MCvScalar(0);
                     MCvScalar find_std = new MCvScalar(0);
- 
+
                     // Now x/col axis is to the right and y/row axis is downward, starting at uperleftcorner in this program. Up and down are reversed compared to 3dmod but the y values are consistent with the image
+                    int lp_size = (int)Math.Round(fidsize / 3.0);
+                    if (lp_size % 2 == 0) lp_size--;
+                    if (lp_size < 1) lp_size = 1;
                     //Low-pass filter
-                    CvInvoke.GaussianBlur(slice_mat, slice_mat, new System.Drawing.Size(1, 1), 0, 0);
+                    CvInvoke.GaussianBlur(slice_mat, slice_mat, new System.Drawing.Size(lp_size, lp_size), 0, 0);
 
                     if (optical_test)
                     {
@@ -452,9 +461,9 @@ namespace ClusterAlign
                         }
 
                         //High pass filter to matbuffer
-                        low_pass_size = (int)MathF.Floor(200 );
-                        low_pass_size = (low_pass_size % 2 == 1) ? low_pass_size : low_pass_size + 1;
-                        CvInvoke.GaussianBlur(slice_mat, matbuffer2, new System.Drawing.Size(low_pass_size, low_pass_size), 0, 0);
+                        high_pass_size = (int)MathF.Floor(fidsize*20 );
+                        high_pass_size = (high_pass_size % 2 == 1) ? high_pass_size : high_pass_size + 1;
+                        CvInvoke.GaussianBlur(slice_mat, matbuffer2, new System.Drawing.Size(high_pass_size, high_pass_size), 0, 0);
                         CvInvoke.Subtract(slice_mat, matbuffer2, matbuffer); //remove large features (like shadows), store in matbuffer
                                                                              
                         blursizex = (int)MathF.Floor((float)say1dx * fidsize/2 );
@@ -476,43 +485,43 @@ namespace ClusterAlign
                         CvInvoke.Sqrt(matbuffer2, matbuffer7);//matbuffer7=sqrt(matbuffer2) = divergence
                         //remove high divergence lines due to borders
                         Image<Gray, float> img7 = matbuffer7.ToImage<Gray, float>();
-                        for (int linn = 2; linn < Nrows / 3; linn++)
+                        for (int linn = 2; linn < Ncols / 3; linn++)
                         {
-                            img7.ROI = new Rectangle(1, 1, linn - 1, Ncols - 1);
+                            img7.ROI = new Rectangle(1, 1, linn - 1, Nrows - 1);
                             if (img7.CountNonzero()[0] > 0)
                             {
-                                img7.ROI = new Rectangle(0, 0, linn + 12, Ncols);
+                                img7.ROI = new Rectangle(0, 0, linn + 12, Nrows);
+                                img7.SetValue(new MCvScalar(0));
+                                break;
+                            }
+                        }
+                        for (int linn = 2; linn < Nrows / 3; linn++)
+                        {
+                            img7.ROI = new Rectangle(1, 1, Ncols - 2, linn - 1);
+                            int cntr = img7.CountNonzero()[0];
+                            if (img7.CountNonzero()[0] > 0)
+                            {
+                                img7.ROI = new Rectangle(0, 0, Ncols, linn + 12);
                                 img7.SetValue(new MCvScalar(0));
                                 break;
                             }
                         }
                         for (int linn = 2; linn < Ncols / 3; linn++)
                         {
-                            img7.ROI = new Rectangle(1, 1, Nrows - 2, linn - 1);
-                            int cntr = img7.CountNonzero()[0];
+                            img7.ROI = new Rectangle(Ncols - linn, 1, linn - 1, Nrows - 2);
                             if (img7.CountNonzero()[0] > 0)
                             {
-                                img7.ROI = new Rectangle(0, 0, Nrows, linn + 12);
-                                img7.SetValue(new MCvScalar(0));
-                                break;
-                            }
-                        }
-                        for (int linn = 2; linn < Nrows / 3; linn++)
-                        {
-                            img7.ROI = new Rectangle(Nrows - linn, 1, linn - 1, Ncols - 2);
-                            if (img7.CountNonzero()[0] > 0)
-                            {
-                                img7.ROI = new Rectangle(Nrows - linn - 12, 0, linn + 12, Ncols);
+                                img7.ROI = new Rectangle(Ncols - linn - 12, 0, linn + 12, Nrows);
                                 img7.SetValue(new MCvScalar(0));
                                break;
                             }
                         }
-                        for (int linn = 2; linn < Ncols / 3; linn++)
+                        for (int linn = 2; linn < Nrows / 3; linn++)
                         {
-                            img7.ROI = new Rectangle(1, Ncols - linn, Nrows - 2, linn - 1);
+                            img7.ROI = new Rectangle(1, Nrows - linn, Ncols - 2, linn - 1);
                             if (img7.CountNonzero()[0] > 0)
                             {
-                                img7.ROI = new Rectangle(0, Ncols - linn - 12, Nrows, linn + 12);
+                                img7.ROI = new Rectangle(0, Nrows - linn - 12, Ncols, linn + 12);
                                 img7.SetValue(new MCvScalar(0));
                                 break;
                             }
@@ -597,6 +606,7 @@ namespace ClusterAlign
                         ThresholdG = Program.FindThreshold(matbuffer0, matbuffer6, NfidMax, ex_kmask_area, divergence_bright); //Find ThresoldG according to histogram of dilated divergence map
                         CvInvoke.Threshold(matbuffer0, matbuffer3, ThresholdG, 0xFF, ThresholdType.Binary); //matbuffer3= matbuffer4>ThresholdG? 0xFF:0
                         matbuffer3.ConvertTo(matbuffer3, DepthType.Cv8U);
+                        if (fidsize>=15)    CvInvoke.Erode(matbuffer3, matbuffer3, ex_3by3, anchor: new System.Drawing.Point(-1, -1),(int)Math.Round(fidsize/15), BorderType.Default, new MCvScalar(0));
                         CvInvoke.BitwiseAnd(localmaxima, matbuffer3, matbuffer4); //matbuffer4= localmaxima & matbuffer3
 
                          bool flag_record;
@@ -733,20 +743,20 @@ namespace ClusterAlign
                         }
 
                         CvInvoke.GaussianBlur(submatbuffer_match, submatbuffer_match, new System.Drawing.Size(3, 3), 0, 0);
-                        //show Console.WriteLine("Slice#="+nslice.ToString()+"  Number of fiducials by threshold="+ NFid[nslice].ToString());
+                        ///Console.WriteLine("Slice#="+nslice.ToString()+"  Number of fiducials by threshold="+ NFid[nslice].ToString());
                         ///win1 = "matching template";
                         ///Program.show_grayimage(submatbuffer_match, win1, Nrows- exclude_radius*2, Ncols- exclude_radius*2);
                         matbuffer2.SetTo(new MCvScalar(0));
                         submatbuffer_match.CopyTo(new Mat(matbuffer2, new Rectangle(exclude_radius, exclude_radius, submatbuffer_match.Cols, submatbuffer_match.Rows))); //matbuffer0 is now the image of correlation with submat 
 
-                         CvInvoke.Dilate(matbuffer2, matbuffer7, ex_kmaskDilate, anchor: new System.Drawing.Point(-1, -1), 1, BorderType.Default, new MCvScalar(0));//Dilate one iteration:  replace neighborhoods with maxima and save in matbuffer2
+                        CvInvoke.Dilate(matbuffer2, matbuffer7, ex_kmaskDilate, anchor: new System.Drawing.Point(-1, -1), 1, BorderType.Default, new MCvScalar(0));//Dilate one iteration:  replace neighborhoods with maxima and save in matbuffer2
                         CvInvoke.Compare(matbuffer2, matbuffer7, localmaxima, CmpType.Equal); //localmaxima= xFF at locations of local peaks of divergenece (based on comparison of dilation with original image)
                         localmaxima.ConvertTo(matbuffer7, DepthType.Cv32F,1d/255);
                         CvInvoke.Dilate(matbuffer7, matbuffer7, ex_kmask, anchor: new System.Drawing.Point(-1, -1), 1, BorderType.Default, new MCvScalar(0));
                         //
                         CvInvoke.Multiply(matbuffer0, matbuffer0, matbuffer0);//matbuffer0=matbuffer0*matbuffer0   //NEEDED TO EMPHASIS MORE THE ACTUAL IMAGE (maybe use filter on match image)
                         CvInvoke.Multiply(matbuffer2, matbuffer0, matbuffer0);//matbuffer0=matbuffer2*matbuffer0
-                        
+                        CvInvoke.GaussianBlur(matbuffer0, matbuffer0, new System.Drawing.Size(lp_size, lp_size), 0, 0);
                         //string win3 = "for final threshold";
                         //CvInvoke.NamedWindow(win3, WindowFlags.KeepRatio);
                         //Program.show_grayimage(matbuffer0, win3, Nrows, Ncols);

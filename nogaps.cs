@@ -394,7 +394,7 @@ namespace ClusterAlign
                 }
                 found_gdx = best_gdx;
                 found_gdy = best_gdy;
-                Console.WriteLine("global dx={0:0}, dy={1:0}", found_gdx, found_gdy);
+                if (found_gdx!= 0 || found_gdy!=0) Console.WriteLine("global dx={0:0}, dy={1:0}", found_gdx, found_gdy);
                 for (int p = 1; p <= contours; p++)
                 {
                     previter_xcenter[p - 1] = previter_xcenter[p - 1] + found_gdx;

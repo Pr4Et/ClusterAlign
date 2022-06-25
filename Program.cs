@@ -32,7 +32,7 @@ namespace ClusterAlign
 {
     public class Program
     {
-        static String Version_information = "ClusterAlign (ver 2022-June-19).";
+        static String Version_information = "ClusterAlign (ver 2022-June-24).";
         static bool xisRotation = ClusterAlign.Settings4ClusterAlign2.Default.xisRotation;
         static svector[] match_tolerance;
         static int cluster_size = ClusterAlign.Settings4ClusterAlign2.Default.cluster_size; //max radius of a single cluster
@@ -353,7 +353,7 @@ namespace ClusterAlign
             svecnull = new svector(0,0,0,0,0,0);
             int NumberofLevels = ClusterAlign.Settings4ClusterAlign2.Default.Ncluster - 1; //number of neccessary matching vectors between cluster instances (Ncluster number of necessary fiducials in cluster)
             int[] cluster_candidate_list = new int[NfidMax];
-             int[,] sfid_cluster_list = new int[Nslices, NfidMax];  //list of elements numbers in each slice participating in the current gathered cluster
+            int[,] sfid_cluster_list = new int[Nslices, NfidMax];  //list of elements numbers in each slice participating in the current gathered cluster
             int[,] smatch = new int[Nslices, NfidMax]; // correspondance of fiducial numbers in each slice to the fiducial in center slice
             int[,] smatch_strength1 = new int[Nslices, NfidMax]; // strength of matching
             int[,] smatch_strength2 = new int[Nslices, NfidMax]; // strength of matching
@@ -1582,11 +1582,10 @@ namespace ClusterAlign
         {
             Mat showfieldV0 = new Mat(Nrows, Ncols, DepthType.Cv8U, 1);  //1 channel to be scaled
             Mat showfield = new Mat(Nrows, Ncols, DepthType.Cv8U, 3);  //3 channels (RGB)
+            Mat shsource = new Mat(Nrows, Ncols, DepthType.Cv32F, 1);
             double minVal = 0;
             double maxVal = 0;
-            System.Drawing.Point locationh = new System.Drawing.Point(0, 0);
-            System.Drawing.Point locationl = new System.Drawing.Point(0, 0);
-            CvInvoke.MinMaxLoc(source, ref minVal, ref maxVal, ref locationl, ref locationh);
+            findminmaxVal(ref source, ref minVal, ref maxVal, (int)((Nrows / 250)* (Nrows / 250)));
             double scale = 255 / (maxVal - minVal);
             CvInvoke.ConvertScaleAbs(source, showfieldV0, scale, -scale * minVal);
             CvInvoke.CvtColor(showfieldV0, showfield, ColorConversion.Gray2Bgr); //copy from one channel (gray) to 3 channels (color)
@@ -1595,7 +1594,7 @@ namespace ClusterAlign
             MCvScalar mywhite = new MCvScalar(0xFF, 0xFF, 0xFF);
             for (int n=0; n< Nfid; n++) 
             {
-                CvInvoke.Circle(showfield, new System.Drawing.Point(locations[nslice, n].col, locations[nslice, n].row), 5, myred, 1, LineType.AntiAlias);
+                CvInvoke.Circle(showfield, new System.Drawing.Point(locations[nslice, n].col, locations[nslice, n].row), (int)(Nrows/250), myred, 1 + (int)(Nrows / 2000), LineType.AntiAlias);
             }
             int lastpx,lastpy;
 
@@ -1606,9 +1605,9 @@ namespace ClusterAlign
                     lastpx = fidx[nslice, n];
                     lastpy = fidy[nslice, n];
                     if (fidn[nslice, n]>=0 )
-                    { CvInvoke.Circle(showfield, new System.Drawing.Point(lastpx, lastpy), attention_size, mygreen, 1, LineType.AntiAlias); } //tracked
+                    { CvInvoke.Circle(showfield, new System.Drawing.Point(lastpx, lastpy), attention_size, mygreen, 1+(int)(Nrows / 1500), LineType.AntiAlias); } //tracked
                     if (fidn[nslice, n]==-2 )
-                    { CvInvoke.Circle(showfield, new System.Drawing.Point(lastpx, lastpy), attention_size, mywhite, 1, LineType.AntiAlias); }//extrapolated
+                    { CvInvoke.Circle(showfield, new System.Drawing.Point(lastpx, lastpy), attention_size, mywhite, 1 + (int)(Nrows / 1500), LineType.AntiAlias); }//extrapolated
                 }
             }
             if (cluster_visualize)
@@ -1621,13 +1620,13 @@ namespace ClusterAlign
                         int p1y = locations[nslice, visualize[nslice, nd, 0]].row;
                         int p2x = locations[nslice, visualize[nslice, nd, 1]].col;
                         int p2y = locations[nslice, visualize[nslice, nd, 1]].row;
-                        CvInvoke.Line(showfield, new Point(p1x, p1y), new Point(p2x, p2y), mygreen, 2, LineType.AntiAlias);
+                        CvInvoke.Line(showfield, new Point(p1x, p1y), new Point(p2x, p2y), mygreen,2 , LineType.AntiAlias);
                     }
                 }
 
             }
 
-            CvInvoke.PutText(showfield,"Slice no="+nslice.ToString(),new Point(20,50),FontFace.HersheyPlain,2,new MCvScalar(255,255,255));
+            CvInvoke.PutText(showfield,"Slice no="+nslice.ToString(),new Point((int)(Nrows/100),(int)(Ncols/50)),FontFace.HersheyPlain,(int)(Nrows/500),new MCvScalar(255,255,0),2+ (int)(Nrows / 1500));
             CvInvoke.NamedWindow(win1, WindowFlags.KeepRatio); // WindowFlags.Fullscreen   Create the window using the specific name
             CvInvoke.Imshow(win1, showfield); //Show the image
             CvInvoke.WaitKey(100);  //Wait for the key pressing event
@@ -1656,10 +1655,13 @@ namespace ClusterAlign
             double maxVal = 0;
             double mutiply_factor = 1;// mask==null? 1.2:1.2;// if mask is still not ready then prepare more candidates of fiducials, so expand their allowed numbers
             double approx_count;
+            MCvScalar avgmat;
+            Mat shsource = new Mat(source.Rows, source.Cols, DepthType.Cv32F, 1);
             System.Drawing.Point locationh = new System.Drawing.Point(0, 0);
             System.Drawing.Point locationl = new System.Drawing.Point(0, 0);
-            Mat shsource = new Mat(source.Rows, source.Cols, DepthType.Cv32F, 1);
-            CvInvoke.MinMaxLoc(source, ref minVal, ref maxVal, ref locationl, ref locationh);
+            findminmaxVal(ref source, ref minVal, ref maxVal, kmask_area);
+            avgmat = CvInvoke.Mean(source);
+            minVal = avgmat.V0;
             if (maxVal - minVal == 0)
             {
                 Console.WriteLine("empty image");
@@ -1669,15 +1671,15 @@ namespace ClusterAlign
             source.ConvertTo(shsource, DepthType.Cv32F,255d/(maxVal-minVal),-minVal* 255d / (maxVal - minVal));
             shsource.ConvertTo(thresh, DepthType.Cv8U);
             threshold_t = CvInvoke.Threshold(thresh, thresh, 0, 255, ThresholdType.Triangle); //Finds threshold by Otsu/triangle algorithm
-            MCvScalar avgmat = CvInvoke.Sum(thresh);
+            avgmat = CvInvoke.Sum(thresh);
             approx_count = (avgmat.V0 / 255.0) / kmask_area;
-            int counter = (approx_count > NfidMax * 20)?1:0;
+            int counter = (approx_count > NfidMax && threshold_t<5) ?1:0;
             float threshold = 0;
             do
             {
                 if (counter>0 )
                 {
-                    threshold_t = 1.10*threshold_t;
+                    threshold_t = threshold_t+5;
                     shsource.ConvertTo(thresh, DepthType.Cv8U);
                     CvInvoke.Threshold(thresh, thresh, threshold_t, 255, ThresholdType.Binary);
                     if (mask != null) 
@@ -1687,7 +1689,7 @@ namespace ClusterAlign
                 }
                 threshold = (float)(threshold_t * (maxVal - minVal) / 255d + minVal);
                 //display for debugging
-                //tring win2 = "check triangle threshold";
+                //string win2 = "check triangle threshold";
                 //CvInvoke.NamedWindow(win2, WindowFlags.KeepRatio);
                 //Program.show_grayimage(thresh, win2, source.Rows, source.Cols);
                 //using SimpleBlobDetector class
@@ -1695,7 +1697,7 @@ namespace ClusterAlign
                 Mat hierarchy = new Mat();
                 CvInvoke.FindContours(thresh, contours, hierarchy, RetrType.External, ChainApproxMethod.ChainApproxSimple);
                 counter = contours.Size; //note: count will be reasonable only if the white objects are enough sparse, otherwise could be low but the approx_count will be high
-                //Console.WriteLine("Counted blobs=" + counter.ToString() + "  threshold=" + threshold.ToString());
+                //Console.WriteLine("Counted blobs=" + counter.ToString() + "  threshold=" + threshold.ToString());/////
             } while (counter > NfidMax);
 
             avgmat=CvInvoke.Sum(thresh);
@@ -1747,6 +1749,42 @@ namespace ClusterAlign
             }
             Console.WriteLine("Alternative plan: threshold=" + threshold.ToString()); 
             return threshold;
+        }
+
+        public static void findminmaxVal(ref Mat source, ref double minVal, ref double  maxVal,int spot_area)
+        {
+            //Steps to find suitable mival/maxval for effectuive reduction to 8bit image
+            int Nrow = source.Rows;
+            int Ncol = source.Cols;
+            int count=0;
+            double minVal0=0, maxVal0=0; 
+            System.Drawing.Point locationh = new System.Drawing.Point(0, 0);
+            System.Drawing.Point locationl = new System.Drawing.Point(0, 0);
+            Mat shsource = new Mat(Nrow, Ncol, DepthType.Cv32F, 1);
+            //double dummy = 0;
+            //Mat kern = CvInvoke.GetStructuringElement(ElementShape.Ellipse, new Size(3, 3), new Point(2, 2));
+            //CvInvoke.Dilate(source, shsource, kern, anchor: new System.Drawing.Point(-1, -1), 1, BorderType.Replicate, new MCvScalar(0));
+            //CvInvoke.MinMaxLoc(shsource, ref minVal0, ref dummy, ref locationl, ref locationh);
+            //CvInvoke.Erode(source, shsource, kern, anchor: new System.Drawing.Point(-1, -1), 1, BorderType.Replicate, new MCvScalar(0));
+            //CvInvoke.MinMaxLoc(shsource, ref dummy, ref maxVal0, ref locationl, ref locationh);
+            CvInvoke.MinMaxLoc(source, ref minVal0, ref maxVal0, ref locationl, ref locationh);
+            minVal = minVal0;
+            maxVal = maxVal0;
+            while (count <= Nrow)
+            {
+                minVal=minVal + (maxVal0 - minVal0) / 64;
+                CvInvoke.Threshold(source, shsource, minVal, 0xFF, ThresholdType.BinaryInv); //shsource= source<val? 0xFF:0 
+                count = CvInvoke.CountNonZero(shsource);
+            }
+            minVal = minVal - (maxVal0 - minVal0) / 64;
+            count = 0;
+            while (count <= spot_area*3)
+            {
+                maxVal = maxVal - (maxVal0 - minVal0) / 64;
+                CvInvoke.Threshold(source, shsource, maxVal, 0xFF, ThresholdType.Binary); //shsource= source>val? 0xFF:0 
+                count = CvInvoke.CountNonZero(shsource);
+            } 
+            maxVal = maxVal + (maxVal0 - minVal0) / 64;
         }
 
         public static void writeIMODfidModel(int[,] fidx, int[,] fidy, int width, int height, int minslice, int maxslice, int fid_count,string fidFileName)

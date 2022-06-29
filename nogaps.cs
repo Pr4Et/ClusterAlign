@@ -28,6 +28,8 @@ namespace ClusterAlign
         public static double fillgaps(double psi0, double phi0, double[] theta_vec, int S, int contours, int ncenter, int Nx, int Ny, ref int[,] fidx, ref int[,] fidy, ref int[,] fidn, ref double[,] Bfinal, ref double[] Dx_vect, ref double[] Dy_vect, ClusterAlign.Program.tp[,] locations, int[] NFid, int main_IterationNum, ref double Theta_shift, double PreAlignmentTolx, double PreAlignmentToly, ref double xc0, ref double yc0, ref double report_phi, ref double report_psi,string basefilename) //S number of slices
         {
             double pi = Math.PI;
+            double phi_range = 15;
+            double psi_range = 15;
             bool xisrotation = ClusterAlign.Settings4ClusterAlign2.Default.xisRotation; //(Math.Abs(phi0-0.5 * Math.PI)< 0.2 * Math.PI);
             double a = 0, b = 0, c = 0, d = 0, e = 0, f = 0, g = 0, h = 0, i = 0;
             double in_a = 0, in_b = 0, in_c = 0, in_d = 0, in_e = 0, in_f = 0, in_g = 0, in_h = 0, in_i = 0;
@@ -90,6 +92,16 @@ namespace ClusterAlign
 
             Console.WriteLine("Fit to rigid body model:");
 
+
+            if (contours<3)
+            {
+                psi_range = 0;
+            }
+            if (contours < 2)
+            {
+                phi_range = 0;
+            }
+
             //shift to center at xc,yc
             for (int p = 1; p <= contours; p++) 
             {
@@ -145,9 +157,9 @@ namespace ClusterAlign
 
                 double z_ncenter;
                 grand_minerror = 1000000;
-                for (phi = (phi0 -15 * pi / 180); phi <= (phi0 + 15 * pi / 180); phi = phi + (3 * pi / 180))//was -15 to 15 step of 3
+                for (phi = (phi0 - phi_range * pi / 180); phi <= (phi0 + phi_range * pi / 180); phi = phi + (3 * pi / 180))//was -15 to 15 step of 3
                 {
-                    for (psi = (psi0 -15 * pi / 180); psi <= (psi0 + 15* pi / 180); psi = psi + (3 * pi / 180))//tested -20 to 20, step of 4
+                    for (psi = (psi0 -psi_range * pi / 180); psi <= (psi0 + psi_range * pi / 180); psi = psi + (3 * pi / 180))//tested -20 to 20, step of 4
                     {
                         //for (Theta_shift = -0 * pi / 180; Theta_shift <= 0 * pi / 180; Theta_shift = Theta_shift + 1 * pi / 180)//was step of 2
                         {
@@ -356,39 +368,42 @@ namespace ClusterAlign
                 int best_gdy = 0;
                 double best_gerr = 1000;
                 double temp_gerr;
-                for (int gdx = -(int)(Math.Abs(Math.Cos(phi)) * PreAlignmentTolx); gdx <= (int)(Math.Abs(Math.Cos(phi)) * PreAlignmentTolx); gdx++)
+                if (contours >= 10)
                 {
-                    for (int gdy = -(int)(Math.Abs(Math.Sin(phi)) * PreAlignmentToly); gdy <= (int)(Math.Abs(Math.Sin(phi))* PreAlignmentToly); gdy++)
+                    for (int gdx = -(int)(Math.Abs(Math.Cos(phi)) * 0.25*PreAlignmentTolx); gdx <= (int)(Math.Abs(Math.Cos(phi)) * 0.25*PreAlignmentTolx); gdx++)
                     {
-                        sumerror = 0;
-                        count = 0;
-                        for (int ns = 1; ns <= S; ns++)
+                        for (int gdy = -(int)(Math.Abs(Math.Sin(phi)) * 0.25*PreAlignmentToly); gdy <= (int)(Math.Abs(Math.Sin(phi)) * 0.25*PreAlignmentToly); gdy++)
                         {
-                            if (ns - 1 == ncenter) continue;
-                            theta = theta_vec[ns - 1] + Theta_shift - Theta0;
-                            Amat(theta, phi, psi, ref a, ref b, ref c, ref d, ref e, ref f, ref g, ref h, ref i);
-                            Inv(a, b, c, d, e, f, g, h, i, ref in_a, ref in_b, ref in_c, ref in_d, ref in_e, ref in_f, ref in_g, ref in_h, ref in_i);
-                            Dx = previter_Dx_vect[ns - 1];
-                            Dy = previter_Dy_vect[ns - 1];
-                            for (int p = 1; p <= contours; p++)
+                            sumerror = 0;
+                            count = 0;
+                            for (int ns = 1; ns <= S; ns++)
                             {
-                                xsim = a * (previter_xcenter[p - 1]+gdx) + b * (previter_ycenter[p - 1]+gdy) + c * previter_zcenter[p - 1];
-                                ysim = d * (previter_xcenter[p - 1]+gdx) + e * (previter_ycenter[p - 1]+gdy)+ f * previter_zcenter[p - 1];
-                                //zsim = g * previter_xcenter[p - 1] + h * previter_ycenter[p - 1] + i * previter_zcenter[p - 1];
-                                if (fidn[ns - 1, p - 1] >= 0 && fidn[ncenter, p - 1] >= 0)
+                                if (ns - 1 == ncenter) continue;
+                                theta = theta_vec[ns - 1] + Theta_shift - Theta0;
+                                Amat(theta, phi, psi, ref a, ref b, ref c, ref d, ref e, ref f, ref g, ref h, ref i);
+                                Inv(a, b, c, d, e, f, g, h, i, ref in_a, ref in_b, ref in_c, ref in_d, ref in_e, ref in_f, ref in_g, ref in_h, ref in_i);
+                                Dx = previter_Dx_vect[ns - 1];
+                                Dy = previter_Dy_vect[ns - 1];
+                                for (int p = 1; p <= contours; p++)
                                 {
-                                    error2 = Math.Pow((Fx[p - 1, ns - 1] + Dx+gdx - xsim), 2) + Math.Pow((Fy[p - 1, ns - 1] + Dy+gdy - ysim), 2);
-                                    sumerror = sumerror + error2;
-                                    count = count + 1;
+                                    xsim = a * (previter_xcenter[p - 1] + gdx) + b * (previter_ycenter[p - 1] + gdy) + c * previter_zcenter[p - 1];
+                                    ysim = d * (previter_xcenter[p - 1] + gdx) + e * (previter_ycenter[p - 1] + gdy) + f * previter_zcenter[p - 1];
+                                    //zsim = g * previter_xcenter[p - 1] + h * previter_ycenter[p - 1] + i * previter_zcenter[p - 1];
+                                    if (fidn[ns - 1, p - 1] >= 0 && fidn[ncenter, p - 1] >= 0)
+                                    {
+                                        error2 = Math.Pow((Fx[p - 1, ns - 1] + Dx + gdx - xsim), 2) + Math.Pow((Fy[p - 1, ns - 1] + Dy + gdy - ysim), 2);
+                                        sumerror = sumerror + error2;
+                                        count = count + 1;
+                                    }
                                 }
                             }
-                        }
-                        temp_gerr = Math.Sqrt(sumerror / count) + 0.02 * Math.Sqrt(gdx * gdx + gdy * gdy);
-                        if (temp_gerr < best_gerr)
-                        {
-                            best_gerr = temp_gerr;
-                            best_gdx = gdx;
-                            best_gdy = gdy;
+                            temp_gerr = Math.Sqrt(sumerror / count) + 0.02 * Math.Sqrt(gdx * gdx + gdy * gdy);
+                            if (temp_gerr < best_gerr)
+                            {
+                                best_gerr = temp_gerr;
+                                best_gdx = gdx;
+                                best_gdy = gdy;
+                            }
                         }
                     }
                 }

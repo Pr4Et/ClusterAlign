@@ -13,6 +13,7 @@ namespace ClusterAlign
         public static string loadAttentionFile = "";
         public static string loadfidFile = "";
         public static int AttentionNumMarkedfids;
+        public static bool isArbAngle = false;
 
         private TextBox TtextInputPath;
         private Button btnBrowsePath;
@@ -39,6 +40,7 @@ namespace ClusterAlign
         private NumericUpDown NumTolFidSize;
         private CheckBox reconstruct;
         private CheckBox normalali;
+        private NumericUpDown ArbAngle;
 
         public Window1()
         {
@@ -71,12 +73,24 @@ namespace ClusterAlign
             NumTolFidSize = this.FindControl<NumericUpDown>("TolFidSize");
             reconstruct = this.FindControl<CheckBox>("reconstruct");
             normalali = this.FindControl<CheckBox>("normal_ali");
-
-
+            ArbAngle = this.FindControl<NumericUpDown>("Random_angle");
+            
             TtextInputPath.Text = ClusterAlign.Settings4ClusterAlign2.Default.Path;
             TDatafile.Text= ClusterAlign.Settings4ClusterAlign2.Default.DataFileName;
             TTiltFile.Text= ClusterAlign.Settings4ClusterAlign2.Default.TiltFileName;
-            CombxisRotation.SelectedIndex = (ClusterAlign.Settings4ClusterAlign2.Default.xisRotation ? 1:0);
+            ArbAngle.Value = ClusterAlign.Settings4ClusterAlign2.Default.ArbAngle;
+            isArbAngle = ClusterAlign.Settings4ClusterAlign2.Default.isArbAngle;
+            if (isArbAngle)
+            {
+                CombxisRotation.SelectedIndex = 2;
+               ArbAngle.IsVisible = true;
+            }
+            else
+            {
+                CombxisRotation.SelectedIndex = (ClusterAlign.Settings4ClusterAlign2.Default.xisRotation ? 1 : 0);
+                ArbAngle.IsVisible = false;
+            }
+
             NumClusterSize.Value = ClusterAlign.Settings4ClusterAlign2.Default.cluster_size;
             NumNcluster.Value = ClusterAlign.Settings4ClusterAlign2.Default.Ncluster;
             Numfidsize.Value = ClusterAlign.Settings4ClusterAlign2.Default.fidsize;
@@ -95,6 +109,7 @@ namespace ClusterAlign
             NumMarkedfids.IsVisible = false;
             reconstruct.IsChecked= ClusterAlign.Settings4ClusterAlign2.Default.add_reconst;
             normalali.IsChecked = ClusterAlign.Settings4ClusterAlign2.Default.export_normalali;
+            CombxisRotation.SelectionChanged += (sender, e) => Rot_SelectionChanged();
             btnRun = this.FindControl<Button>("btnRun");
             btnBrowsePath.Click += async (sender, e) => await GetPath();
             btnloadAttention.Click += async (sender, e) => await GetAttentionFile();
@@ -102,8 +117,7 @@ namespace ClusterAlign
             btnRun.Click += BtnRun_Click;
 
         }
-
-        private void BtnRun_Click(object sender, RoutedEventArgs e)
+         private void BtnRun_Click(object sender, RoutedEventArgs e)
         {
             AttentionNumMarkedfids = (int)NumMarkedfids.Value;
             ClusterAlign.Settings4ClusterAlign2.Default.Path= TtextInputPath.Text;
@@ -124,6 +138,8 @@ namespace ClusterAlign
             ClusterAlign.Settings4ClusterAlign2.Default.TolFidCenter = (int)NumTolFidCenter.Value;
             ClusterAlign.Settings4ClusterAlign2.Default.add_reconst = (bool)reconstruct.IsChecked;
             ClusterAlign.Settings4ClusterAlign2.Default.export_normalali= (bool)normalali.IsChecked;
+            ClusterAlign.Settings4ClusterAlign2.Default.isArbAngle= isArbAngle;
+            ClusterAlign.Settings4ClusterAlign2.Default.ArbAngle = (uint)ArbAngle.Value;
             ClusterAlign.Settings4ClusterAlign2.Default.Save();
             ClusterAlign.App.Hidewin();
             Program.MyMain();
@@ -156,6 +172,22 @@ namespace ClusterAlign
                 TDatafile.Text=Path.GetFileName(@result[0]);
                 TTiltFile.Text= Path.GetFileNameWithoutExtension(@result[0])+".rawtlt";
             }
+        }
+
+
+ 
+        private void Rot_SelectionChanged()
+        {
+            isArbAngle = (CombxisRotation.SelectedIndex == 2 ? true : false); //Angle=
+            if (isArbAngle)
+            {
+                ArbAngle.IsVisible = true;
+            }
+            else
+            {
+                ArbAngle.IsVisible = false;
+            }
+
         }
 
         private async Task GetAttentionFile()

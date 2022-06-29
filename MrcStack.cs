@@ -223,7 +223,12 @@ public const int MRC_CFLOAT_AMP_RAD = 21;        /* COMPLEX FLOAT mode, but in a
 
         public unsafe void Fexport(string ref_filename, string out_filename, ref double[] Dx_vect, ref double[] Dy_vect, ref double report_phi)
         {
-            bool rotate2normal = Settings4ClusterAlign2.Default.export_normalali;
+            if (!Program.isMRCfile)
+            {
+                Console.WriteLine("Aligned image file cannot be generated from dataset in TIF format.");
+                return;
+            }
+            bool rotate2normal = (Settings4ClusterAlign2.Default.export_normalali || (Settings4ClusterAlign2.Default.isArbAngle && !out_filename.Contains("_jali."))) && (report_phi!=0);
             float phi = (float)report_phi;
             outfile = File.OpenWrite(out_filename);
             byte[] arr = new byte[headersize];

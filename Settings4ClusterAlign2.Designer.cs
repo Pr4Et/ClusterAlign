@@ -12,7 +12,7 @@ namespace ClusterAlign {
     
     
     [global::System.Runtime.CompilerServices.CompilerGeneratedAttribute()]
-    [global::System.CodeDom.Compiler.GeneratedCodeAttribute("Microsoft.VisualStudio.Editors.SettingsDesigner.SettingsSingleFileGenerator", "16.10.0.0")]
+    [global::System.CodeDom.Compiler.GeneratedCodeAttribute("Microsoft.VisualStudio.Editors.SettingsDesigner.SettingsSingleFileGenerator", "17.2.0.0")]
     public sealed partial class Settings4ClusterAlign2 : global::System.Configuration.ApplicationSettingsBase {
         
         private static Settings4ClusterAlign2 defaultInstance = ((Settings4ClusterAlign2)(global::System.Configuration.ApplicationSettingsBase.Synchronized(new Settings4ClusterAlign2())));
@@ -236,6 +236,30 @@ namespace ClusterAlign {
             }
             set {
                 this["export_normalali"] = value;
+            }
+        }
+        
+        [global::System.Configuration.UserScopedSettingAttribute()]
+        [global::System.Diagnostics.DebuggerNonUserCodeAttribute()]
+        [global::System.Configuration.DefaultSettingValueAttribute("False")]
+        public bool isArbAngle {
+            get {
+                return ((bool)(this["isArbAngle"]));
+            }
+            set {
+                this["isArbAngle"] = value;
+            }
+        }
+        
+        [global::System.Configuration.UserScopedSettingAttribute()]
+        [global::System.Diagnostics.DebuggerNonUserCodeAttribute()]
+        [global::System.Configuration.DefaultSettingValueAttribute("0")]
+        public uint ArbAngle {
+            get {
+                return ((uint)(this["ArbAngle"]));
+            }
+            set {
+                this["ArbAngle"] = value;
             }
         }
     }

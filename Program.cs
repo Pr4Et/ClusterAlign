@@ -32,7 +32,7 @@ namespace ClusterAlign
 {
     public class Program
     {
-        static String Version_information = "ClusterAlign (ver 2022-June-24).";
+        static String Version_information = "ClusterAlign (ver 2022-June-29).";
         static bool xisRotation = ClusterAlign.Settings4ClusterAlign2.Default.xisRotation;
         static svector[] match_tolerance;
         static int cluster_size = ClusterAlign.Settings4ClusterAlign2.Default.cluster_size; //max radius of a single cluster
@@ -47,10 +47,15 @@ namespace ClusterAlign
         static bool cluster_visualize = false; //(Shows example of cluster visually at the end of the first iteration, depending on selected n1n1visualize)
         static int n1visualize = 336; ///336 -> check in advance a suitable numbers from fidn[ncenter,:] 
         static int[,,] visualize = new int[100, cluster_visualize? 50000:1, 2];//only for cluster visualization
+        public static bool isMRCfile = true;
 
         public static void MyMain() 
         {
-            string path = ClusterAlign.Settings4ClusterAlign2.Default.Path; // "C:\\Users\\shaharseifer\\Documents\\analyze\\";
+            Console.WriteLine("");
+            Console.WriteLine(Version_information);
+            Console.WriteLine("Written by Shahar Seifer, Elbaum lab, Weizmann Institute of Science.");
+            Console.WriteLine("Note: GNU General Public License");
+            string path = ClusterAlign.Settings4ClusterAlign2.Default.Path;
             string slash = "";
             if (path.Length>1)
             {
@@ -60,6 +65,34 @@ namespace ClusterAlign
                 }
             }
             string FileName = path + slash + ClusterAlign.Settings4ClusterAlign2.Default.DataFileName; //dataset, may be tif or mrc
+            if (Path.GetExtension(FileName) == ".tif")
+            {
+                isMRCfile = false;
+            }
+
+            if (ClusterAlign.Settings4ClusterAlign2.Default.isArbAngle)
+            {
+                if (isMRCfile)
+                {
+                    string oldFileName = FileName;
+                    FileName = path + slash + Path.GetFileNameWithoutExtension(FileName) + "_R.mrc";
+                    Console.WriteLine("");
+                    Console.WriteLine("Saving image with rotation axis parallel to Y (angle=0).");
+                    double[] Dx_vect_zero = new double[360];
+                    double[] Dy_vect_zero = new double[360];
+                    double declared_phi = ClusterAlign.Settings4ClusterAlign2.Default.ArbAngle*Math.PI/180;
+                    MrcStack myMrcStack = new MrcStack();
+                    //will make the rotation reduced to zero, the new file will have rotation axis Y (phi=0), xisrotation is already false
+                    myMrcStack.Fexport(oldFileName, FileName, ref Dx_vect_zero, ref Dy_vect_zero, ref declared_phi);
+
+                }
+                else
+                {
+                    Console.WriteLine("You request requires MRC file");
+                    Thread.Sleep(10000);
+                    System.Environment.Exit(0);
+                }
+            }
             string FidFileName = path + slash + Path.GetFileNameWithoutExtension(FileName)+ ".fid.txt";
             string NogapsFidFileName = path + slash + Path.GetFileNameWithoutExtension(FileName) + ".nogaps.fid.txt";
             string out_filename = path + slash + Path.GetFileNameWithoutExtension(FileName) + "_jali.mrc"; //our own ali files, just aligned mrc files, preferable if you use our reconstruction
@@ -105,7 +138,6 @@ namespace ClusterAlign
             const bool divergence_bright = true; //always true
             //int seedof3 =1 ; //if =1: seed of match is 3 vector match, otherwise 2 vector match.
             string[] tiltlines=null;
-            bool isMRCfile=true;
             bool isAttentionRequest = false;
             bool PseudoAttentionRequest = false;
             bool isfidRequest = false;
@@ -120,10 +152,6 @@ namespace ClusterAlign
             double report_phi = 0;
             double report_psi = 0;
 
-            Console.WriteLine("");
-            Console.WriteLine(Version_information);
-            Console.WriteLine("Written by Shahar Seifer, Elbaum lab, Weizmann Institute of Science.");
-            Console.WriteLine("Note: GNU General Public License");
 
             System.IO.FileStream reportoutfile = File.Create(report_filename);
             var reportfobj = new StreamWriter(reportoutfile, System.Text.Encoding.UTF8);
@@ -659,7 +687,7 @@ namespace ClusterAlign
                                     }
                                 }
                             }
-                            if (NFid[nslice] > 2)
+                            if (NFid[nslice] > 20) 
                             { submatbuffer.ConvertTo(submatbuffer, DepthType.Cv32F, 1.0d / NFid[nslice]); } //normalize accumulated images to average 8U/32F
                             else
                             {
@@ -1594,7 +1622,7 @@ namespace ClusterAlign
             MCvScalar mywhite = new MCvScalar(0xFF, 0xFF, 0xFF);
             for (int n=0; n< Nfid; n++) 
             {
-                CvInvoke.Circle(showfield, new System.Drawing.Point(locations[nslice, n].col, locations[nslice, n].row), (int)(Nrows/250), myred, 1 + (int)(Nrows / 2000), LineType.AntiAlias);
+                CvInvoke.Circle(showfield, new System.Drawing.Point(locations[nslice, n].col, locations[nslice, n].row), (int)(Nrows/250), myred, 1 + (int)(Nrows / 2500), LineType.AntiAlias);
             }
             int lastpx,lastpy;
 

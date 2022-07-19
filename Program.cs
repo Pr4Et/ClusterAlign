@@ -32,7 +32,7 @@ namespace ClusterAlign
 {
     public class Program
     {
-        static String Version_information = "ClusterAlign (ver 2022-June-29).";
+        static String Version_information = "ClusterAlign (ver 2022-July-6).";
         static bool xisRotation = ClusterAlign.Settings4ClusterAlign2.Default.xisRotation;
         static svector[] match_tolerance;
         static int cluster_size = ClusterAlign.Settings4ClusterAlign2.Default.cluster_size; //max radius of a single cluster
@@ -130,7 +130,7 @@ namespace ClusterAlign
             int KerSize2ndOut = 2 * HKerSize2ndOut + 1;
             double minVal = 0;
             double maxVal = 0;
-            int exclude_radius = Math.Max(12, (int)(fidsize*1.2));
+            int exclude_radius = Math.Max(25, (int)(fidsize*1.2));
             //int level_expected = (int)(0.3*NfidMax); //number of cluster members expected, very tentative number
             System.Drawing.Point locationh = new System.Drawing.Point(0, 0);
             System.Drawing.Point locationl = new System.Drawing.Point(0, 0);
@@ -687,7 +687,7 @@ namespace ClusterAlign
                                     }
                                 }
                             }
-                            if (NFid[nslice] > 20) 
+                            if (NFid[nslice] > 3) 
                             { submatbuffer.ConvertTo(submatbuffer, DepthType.Cv32F, 1.0d / NFid[nslice]); } //normalize accumulated images to average 8U/32F
                             else
                             {
@@ -760,14 +760,35 @@ namespace ClusterAlign
                             //painted with color 0 over circles of expected fiducial locations according to fit
                             PsAttentionslices[nslice].ConvertTo(Attention_slice_mat, DepthType.Cv8U, 1, 0);
                             CvInvoke.Threshold(Attention_slice_mat, matbuffer4, 1, 0xFF, ThresholdType.BinaryInv); //matbuffer6= Attention_slice_mat<1? 0xFF:0 (used as mask to pick color 0)
-                            CvInvoke.Multiply(matbuffer4, matbuffer0, matbuffer2, 1.0, DepthType.Cv32F);
-                            CvInvoke.MatchTemplate(matbuffer2, submatbuffer, submatbuffer_match_attention, TemplateMatchingType.CcorrNormed);//CcoeffNormed correlation of signal above average, with matbuffer6 as mask
-                            CvInvoke.Resize(matbuffer4, matbuffer4, new Size(submatbuffer_match_attention.Width, submatbuffer_match_attention.Height));
-                            double background_mask = (double)CvInvoke.Mean(submatbuffer_match_attention, matbuffer4).V0;
-                            submatbuffer_match_attention.ConvertTo(submatbuffer_match_attention, DepthType.Cv32F, 1.0d, -background_mask); //subtract background level
-                            Mat zerosa = new Mat(submatbuffer_match_attention.Height, submatbuffer_match_attention.Width, DepthType.Cv32F, 1);
+                            ///Changed in 6July22 to remove spot artifacts of attention in predicted location when STD of image is low
+                            ///CvInvoke.Multiply(matbuffer4, matbuffer0, matbuffer2, 1.0, DepthType.Cv32F);
+                            ///CvInvoke.MatchTemplate(matbuffer2, submatbuffer, submatbuffer_match_attention, TemplateMatchingType.CcorrNormed);//CcoeffNormed correlation of signal above average, with matbuffer6 as mask
+                            //CvInvoke.Resize(matbuffer4, matbuffer4, new Size(submatbuffer_match.Width, submatbuffer_match.Height));
+                            //CvInvoke.MatchTemplate(matbuffer2, submatbuffer, submatbuffer_match_attention, TemplateMatchingType.CcorrNormed, matbuffer4);//6July11 added the mask to avoid catching the margins of the spots. CcoeffNormed correlation of signal above average, with matbuffer6 as mask
+                            //CvInvoke.Threshold(submatbuffer_match_attention, matbuffer4, match_att_avg, 0xFF, ThresholdType.Binary); //if above average these are the spots
+                            //matbuffer4.ConvertTo(matbuffer4, DepthType.Cv8U, 1, 0);
+                            //CvInvoke.Erode(matbuffer4, matbuffer4, ex_kmask, anchor: new System.Drawing.Point(-1, -1), 3, BorderType.Replicate, new MCvScalar(0)); //3 iterations erode
+                            //double background_mask = (double)CvInvoke.Mean(submatbuffer_match_attention, matbuffer4).V0;
+                            //submatbuffer_match_attention.ConvertTo(submatbuffer_match_attention, DepthType.Cv32F, 1.0d, -background_mask); //subtract background level
+                            //CvInvoke.Multiply(matbuffer4, submatbuffer_match_attention, submatbuffer_match_attention, 1.0d / 255, DepthType.Cv32F);
+                            //Mat zerosa = new Mat(submatbuffer_match_attention.Height, submatbuffer_match_attention.Width, DepthType.Cv32F, 1);
+                            //CvInvoke.Max(zerosa, submatbuffer_match_attention, submatbuffer_match_attention);
+
+                            //6Jul22 consider only to enahance the level over the spot, but delicate enough to so not to generate artifacts 
+                            CvInvoke.Resize(matbuffer4, matbuffer4, new Size(submatbuffer_match.Width, submatbuffer_match.Height));
+                            double match_avg = (double)CvInvoke.Mean(submatbuffer_match,matbuffer4).V0;
+                            submatbuffer_match.ConvertTo(submatbuffer_match_attention, DepthType.Cv32F, 1.0d, -match_avg);
+                            matbuffer4.ConvertTo(matbuffer4, DepthType.Cv32F, 0.5d/255, 0);
+                            int sm_size = (int)Math.Round(fidsize);
+                            if (sm_size % 2 == 0) sm_size--;
+                            if (sm_size < 1) sm_size = 1;
+                            CvInvoke.GaussianBlur(matbuffer4, matbuffer4, new System.Drawing.Size(sm_size, sm_size), 0, 0);
+                            Mat zerosa = new Mat(submatbuffer_match.Height, submatbuffer_match.Width, DepthType.Cv32F, 1);
                             CvInvoke.Max(zerosa, submatbuffer_match_attention, submatbuffer_match_attention);
-                            CvInvoke.Add(submatbuffer_match, submatbuffer_match_attention, submatbuffer_match);
+                            CvInvoke.Multiply(matbuffer4, submatbuffer_match_attention, submatbuffer_match_attention, 1.0d , DepthType.Cv32F);
+                            //win1 = "matching template";
+                            //Program.show_grayimage(submatbuffer_match_attention, win1, Nrows - exclude_radius * 2, Ncols - exclude_radius * 2);
+                            CvInvoke.Add(submatbuffer_match, submatbuffer_match_attention, submatbuffer_match); //attention locations should not get boosted, only features within
                         }
 
                         CvInvoke.GaussianBlur(submatbuffer_match, submatbuffer_match, new System.Drawing.Size(3, 3), 0, 0);
@@ -1683,19 +1704,31 @@ namespace ClusterAlign
             double maxVal = 0;
             double mutiply_factor = 1;// mask==null? 1.2:1.2;// if mask is still not ready then prepare more candidates of fiducials, so expand their allowed numbers
             double approx_count;
+            //int avg_Area = 0;
             MCvScalar avgmat;
             Mat shsource = new Mat(source.Rows, source.Cols, DepthType.Cv32F, 1);
+            Mat thresh = new Mat(source.Rows, source.Cols, DepthType.Cv8U, 1);
             System.Drawing.Point locationh = new System.Drawing.Point(0, 0);
             System.Drawing.Point locationl = new System.Drawing.Point(0, 0);
             findminmaxVal(ref source, ref minVal, ref maxVal, kmask_area);
-            avgmat = CvInvoke.Mean(source);
-            minVal = avgmat.V0;
+            avgmat = CvInvoke.Mean(source); 
+            /*if (mask == null)
+            {
+                avgmat = CvInvoke.Mean(source);
+            }
+            else
+            {
+                avgmat = CvInvoke.Mean(source,mask);
+            }*/
+            if (bright_features)
+                minVal = avgmat.V0;
+            else
+                maxVal = avgmat.V0;
             if (maxVal - minVal == 0)
             {
                 Console.WriteLine("empty image");
                 return 0; }
             double threshold_t = 0;
-            Mat thresh = new Mat(source.Rows, source.Cols, DepthType.Cv8U, 1);
             source.ConvertTo(shsource, DepthType.Cv32F,255d/(maxVal-minVal),-minVal* 255d / (maxVal - minVal));
             shsource.ConvertTo(thresh, DepthType.Cv8U);
             threshold_t = CvInvoke.Threshold(thresh, thresh, 0, 255, ThresholdType.Triangle); //Finds threshold by Otsu/triangle algorithm
@@ -1703,32 +1736,37 @@ namespace ClusterAlign
             approx_count = (avgmat.V0 / 255.0) / kmask_area;
             int counter = (approx_count > NfidMax && threshold_t<5) ?1:0;
             float threshold = 0;
-            do
-            {
-                if (counter>0 )
+            //do
+            //{
+                do
                 {
-                    threshold_t = threshold_t+5;
-                    shsource.ConvertTo(thresh, DepthType.Cv8U);
-                    CvInvoke.Threshold(thresh, thresh, threshold_t, 255, ThresholdType.Binary);
-                    if (mask != null) 
+                    if (counter > 0)
                     {
-                        CvInvoke.Multiply(thresh, mask, thresh, 1.0, DepthType.Cv8U); 
+                        threshold_t = threshold_t + 5;
+                        shsource.ConvertTo(thresh, DepthType.Cv8U);
+                        CvInvoke.Threshold(thresh, thresh, threshold_t, 255, ThresholdType.Binary);
+                        if (mask != null)
+                        {
+                            CvInvoke.Multiply(thresh, mask, thresh, 1.0, DepthType.Cv8U);
+                        }
                     }
-                }
-                threshold = (float)(threshold_t * (maxVal - minVal) / 255d + minVal);
-                //display for debugging
-                //string win2 = "check triangle threshold";
-                //CvInvoke.NamedWindow(win2, WindowFlags.KeepRatio);
-                //Program.show_grayimage(thresh, win2, source.Rows, source.Cols);
-                //using SimpleBlobDetector class
-                VectorOfVectorOfPoint contours = new VectorOfVectorOfPoint();
-                Mat hierarchy = new Mat();
-                CvInvoke.FindContours(thresh, contours, hierarchy, RetrType.External, ChainApproxMethod.ChainApproxSimple);
-                counter = contours.Size; //note: count will be reasonable only if the white objects are enough sparse, otherwise could be low but the approx_count will be high
-                //Console.WriteLine("Counted blobs=" + counter.ToString() + "  threshold=" + threshold.ToString());/////
-            } while (counter > NfidMax);
+                    threshold = (float)(threshold_t * (maxVal - minVal) / 255d + minVal);
+                    //display for debugging
+                    //string win2 = "check triangle threshold";
+                    //CvInvoke.NamedWindow(win2, WindowFlags.KeepRatio);
+                    //Program.show_grayimage(thresh, win2, source.Rows, source.Cols);
+                    //using SimpleBlobDetector class
+                    VectorOfVectorOfPoint contours = new VectorOfVectorOfPoint();
+                    Mat hierarchy = new Mat();
+                    CvInvoke.FindContours(thresh, contours, hierarchy, RetrType.External, ChainApproxMethod.ChainApproxSimple);
+                    counter = contours.Size; //note: count will be reasonable only if the white objects are enough sparse, otherwise could be low but the approx_count will be high
+                                             //Console.WriteLine("Counted blobs=" + counter.ToString() + "  threshold=" + threshold.ToString());/////
+                } while (counter > NfidMax);
+            //    avgmat = CvInvoke.Sum(thresh);
+            //    avg_Area = (int)((avgmat.V0 / 255.0) / counter);
+            //} while (avg_Area > 3 * kmask_area && counter> 0.5* NfidMax);
 
-            avgmat=CvInvoke.Sum(thresh);
+            avgmat = CvInvoke.Sum(thresh);
             approx_count = (avgmat.V0 / 255.0) / kmask_area;
             if (counter>0 && approx_count< NfidMax*20) return threshold; //normally will exit here
 

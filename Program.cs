@@ -32,7 +32,7 @@ namespace ClusterAlign
 {
     public class Program
     {
-        static String Version_information = "ClusterAlign (ver 2022-July-6).";
+        static String Version_information = "ClusterAlign (ver 2022-Aug-05).";
         static bool xisRotation = ClusterAlign.Settings4ClusterAlign2.Default.xisRotation;
         static svector[] match_tolerance;
         static int cluster_size = ClusterAlign.Settings4ClusterAlign2.Default.cluster_size; //max radius of a single cluster
@@ -151,7 +151,7 @@ namespace ClusterAlign
             double[] Dy_vect;
             double report_phi = 0;
             double report_psi = 0;
-
+            bool Threshold_normal = true;
 
             System.IO.FileStream reportoutfile = File.Create(report_filename);
             var reportfobj = new StreamWriter(reportoutfile, System.Text.Encoding.UTF8);
@@ -631,21 +631,22 @@ namespace ClusterAlign
                         {
                             matbuffer7.ConvertTo(matbuffer6, DepthType.Cv8U, 1, 0);
                         }
-                        ThresholdG = Program.FindThreshold(matbuffer0, matbuffer6, NfidMax, ex_kmask_area, divergence_bright); //Find ThresoldG according to histogram of dilated divergence map
+                        ThresholdG = Program.FindThreshold(matbuffer0, matbuffer6, NfidMax, ex_kmask_area, divergence_bright, ref Threshold_normal); //Find ThresoldG according to histogram of dilated divergence map
                         CvInvoke.Threshold(matbuffer0, matbuffer3, ThresholdG, 0xFF, ThresholdType.Binary); //matbuffer3= matbuffer4>ThresholdG? 0xFF:0
                         matbuffer3.ConvertTo(matbuffer3, DepthType.Cv8U);
                         if (fidsize>=15)    CvInvoke.Erode(matbuffer3, matbuffer3, ex_3by3, anchor: new System.Drawing.Point(-1, -1),(int)Math.Round(fidsize/15), BorderType.Default, new MCvScalar(0));
                         CvInvoke.BitwiseAnd(localmaxima, matbuffer3, matbuffer4); //matbuffer4= localmaxima & matbuffer3
 
-                         bool flag_record;
+                        bool flag_record;
+                        submatbuffer = new Mat(exclude_radius * 2 + 1, exclude_radius * 2 + 1, DepthType.Cv32F, 1);
+                        submatbuffer.SetTo(new MCvScalar(0));
+                        NFid[nslice] = 0;
+                        if (Threshold_normal)
                         {
                             Mat ROItemp;
                             Mat t_ROItemp = new Mat(exclude_radius * 2 + 1, exclude_radius * 2 + 1, DepthType.Cv32F, 1);
                             Mat scoreImg = new Mat(1, 1, DepthType.Cv32F, 1);
                             flag_record = false;
-                            submatbuffer = new Mat(exclude_radius * 2 + 1, exclude_radius * 2 + 1, DepthType.Cv32F, 1);
-                            submatbuffer.SetTo(new MCvScalar(0));
-                            NFid[nslice] = 0;
                             arr_matbuffer4 = matbuffer4.GetData();  //from mat to array, stores the fiducials according to general procedure
                             for (int row = marginy + exclude_radius + 1; row < Nrows - marginy - exclude_radius; row++)
                             {
@@ -687,98 +688,93 @@ namespace ClusterAlign
                                     }
                                 }
                             }
-                            if (NFid[nslice] > 3) 
-                            { submatbuffer.ConvertTo(submatbuffer, DepthType.Cv32F, 1.0d / NFid[nslice]); } //normalize accumulated images to average 8U/32F
-                            else
-                            {
+                        }
+
+                        if (NFid[nslice] > 3 && NFid[nslice]>0.2*NfidMax) 
+                        {       
+                            submatbuffer.ConvertTo(submatbuffer, DepthType.Cv32F, 1.0d / NFid[nslice]); //normalize accumulated images to average 8U/32F
+                        } 
+                        else
+                        {
+                                //CvInvoke.MinMaxLoc(submatbuffer, ref minVal,ref maxVal, ref locationl, ref locationh);
+                                //if (maxVal == minVal || NFid[nslice] ==0)
+                                //{ maxVal = avgmat.V1; minVal = 0; }              
+                                //else { minVal = minVal / NFid[nslice]; maxVal = maxVal / NFid[nslice]; }
+                                minVal = 0;
+                                maxVal = 100;
                                 //intial assumption about shape of fiducial (artifical template):
-                                submatbuffer.SetTo(new MCvScalar(0));
-                                CvInvoke.Circle(submatbuffer, new Point(exclude_radius, exclude_radius), (int)(0.75*HKerSize), avgmat, -1); //avgmat instead of new MCvScalar();
+                                submatbuffer.SetTo(new MCvScalar(minVal));
+                                CvInvoke.Circle(submatbuffer, new Point(exclude_radius, exclude_radius), (int)(0.75*HKerSize), new MCvScalar(maxVal), -1); 
                                 CvInvoke.GaussianBlur(submatbuffer, submatbuffer, new System.Drawing.Size(blursizex, blursizey), 0, 0);
-                            }
-                            win1 = "generated template";
-                            Program.show_grayimage(submatbuffer, win1, exclude_radius * 2 + 2, exclude_radius * 2 + 2);
-                            if (IterationNum == 0 && Math.Abs(tiltangles[nslice]) < 30 * Math.PI / 180)
+                        }
+                        win1 = "generated template";
+                        Program.show_grayimage(submatbuffer, win1, exclude_radius * 2 + 2, exclude_radius * 2 + 2);
+                        if (IterationNum == 0 && Math.Abs(tiltangles[nslice]) < 30 * Math.PI / 180)
+                        {
+                            CvInvoke.Accumulate(submatbuffer, grand_submatbuffer);
+                            grand_acc_count++;
+                        }
+                        if (IterationNum == 0 && nslice == Nslices - 1 && grand_acc_count>0) //operations in the last slice
+                        {
+                            grand_submatbuffer.ConvertTo(grand_submatbuffer, DepthType.Cv32F, 1.0d / grand_acc_count);//normalize
+                            //CvInvoke.MeanStdDev(grand_submatbuffer,ref find_mean, ref find_std);
+                            CvInvoke.MinMaxLoc(grand_submatbuffer, ref minVal, ref maxVal, ref locationl, ref locationh);
+                            double signal_var = Math.Sqrt(maxVal)- Math.Sqrt(minVal); //this is the isolated signal (fiducial) with respect to the non-squared pixel levels
+                            Console.WriteLine("CNR= {0:0.000}", signal_var/noise_std); //Contrast to noise ratio of the fiducials
+                            reportfobj.WriteLine("CNR= {0:0.000}", signal_var / noise_std);
+                            if (auto_fid_size && maxVal - minVal > 0)
                             {
-                                CvInvoke.Accumulate(submatbuffer, grand_submatbuffer);
-                                grand_acc_count++;
-                            }
-                            if (IterationNum == 0 && nslice == Nslices - 1 && grand_acc_count>0) //operations in the last slice
-                            {
-                                grand_submatbuffer.ConvertTo(grand_submatbuffer, DepthType.Cv32F, 1.0d / grand_acc_count);//normalize
-                                //CvInvoke.MeanStdDev(grand_submatbuffer,ref find_mean, ref find_std);
-                                CvInvoke.MinMaxLoc(grand_submatbuffer, ref minVal, ref maxVal, ref locationl, ref locationh);
-                                double signal_var = Math.Sqrt(maxVal)- Math.Sqrt(minVal); //this is the isolated signal (fiducial) with respect to the non-squared pixel levels
-                                Console.WriteLine("CNR= {0:0.000}", signal_var/noise_std); //Contrast to noise ratio of the fiducials
-                                reportfobj.WriteLine("CNR= {0:0.000}", signal_var / noise_std);
-                                if (auto_fid_size && maxVal - minVal > 0)
+                                //this block adjusts fidsize and its related mask 
+                                double threshold_t = 0;
+                                Mat thresh = new Mat(grand_submatbuffer.Rows, grand_submatbuffer.Cols, DepthType.Cv8U, 1);
+                                grand_submatbuffer.ConvertTo(grand_submatbuffer, DepthType.Cv32F, 255d / (maxVal - minVal), -minVal * 255d / (maxVal - minVal));
+                                grand_submatbuffer.ConvertTo(matbuffer3, DepthType.Cv8U);
+                                threshold_t = CvInvoke.Threshold(matbuffer3, matbuffer3, 0, 255, ThresholdType.Otsu); //Finds sharp edge representation of the average fiducial by Otsu algorithm based on graidents
+                                MCvScalar sumim = CvInvoke.Sum(thresh);
+                                //Update avergae fiducial radius for next iteration
+                                fidsize = (float)(2*Math.Sqrt((sumim.V0 / 255.0) / Math.PI)); //based on area of a circle
+                                Console.WriteLine("Updated avg. fiducial size= {0:0.0}",fidsize);
+                                HKerSize = Convert.ToInt32(MathF.Ceiling(0.5F * fidsize * (1 + fidsize_ratiovar))); //Half kernel size for convolution in image processing
+                                KerSize = 2 * HKerSize + 1;
+                                HKerSizeDilate = (int)(HKerSize / 2);
+                                KerSizeDilate = 2 * HKerSizeDilate + 1;
+                                kerx_ptr = CvInvoke.cvCreateMat(KerSize, KerSize, DepthType.Cv32F);
+                                kery_ptr = CvInvoke.cvCreateMat(KerSize, KerSize, DepthType.Cv32F);
+                                for (int xind = -HKerSize; xind <= HKerSize; xind++)
                                 {
-                                    //this block adjusts fidsize and its related mask 
-                                    double threshold_t = 0;
-                                    Mat thresh = new Mat(grand_submatbuffer.Rows, grand_submatbuffer.Cols, DepthType.Cv8U, 1);
-                                    grand_submatbuffer.ConvertTo(grand_submatbuffer, DepthType.Cv32F, 255d / (maxVal - minVal), -minVal * 255d / (maxVal - minVal));
-                                    grand_submatbuffer.ConvertTo(matbuffer3, DepthType.Cv8U);
-                                    threshold_t = CvInvoke.Threshold(matbuffer3, matbuffer3, 0, 255, ThresholdType.Otsu); //Finds sharp edge representation of the average fiducial by Otsu algorithm based on graidents
-                                    MCvScalar sumim = CvInvoke.Sum(thresh);
-                                    //Update avergae fiducial radius for next iteration
-                                    fidsize = (float)(2*Math.Sqrt((sumim.V0 / 255.0) / Math.PI)); //based on area of a circle
-                                    Console.WriteLine("Updated avg. fiducial size= {0:0.0}",fidsize);
-                                    HKerSize = Convert.ToInt32(MathF.Ceiling(0.5F * fidsize * (1 + fidsize_ratiovar))); //Half kernel size for convolution in image processing
-                                    KerSize = 2 * HKerSize + 1;
-                                    HKerSizeDilate = (int)(HKerSize / 2);
-                                    KerSizeDilate = 2 * HKerSizeDilate + 1;
-                                    kerx_ptr = CvInvoke.cvCreateMat(KerSize, KerSize, DepthType.Cv32F);
-                                    kery_ptr = CvInvoke.cvCreateMat(KerSize, KerSize, DepthType.Cv32F);
-                                    for (int xind = -HKerSize; xind <= HKerSize; xind++)
+                                    for (int yind = -HKerSize; yind <= HKerSize; yind++)
                                     {
-                                        for (int yind = -HKerSize; yind <= HKerSize; yind++)
+                                        kradius = MathF.Sqrt(xind * xind + yind * yind) + 0.1F;
+                                        if (kradius >= 0.5F * fidsize * (1 - fidsize_ratiovar) && kradius <= 0.5F * fidsize * (1 + fidsize_ratiovar))
                                         {
-                                            kradius = MathF.Sqrt(xind * xind + yind * yind) + 0.1F;
-                                            if (kradius >= 0.5F * fidsize * (1 - fidsize_ratiovar) && kradius <= 0.5F * fidsize * (1 + fidsize_ratiovar))
-                                            {
-                                                CvInvoke.cvSetReal2D(kerx_ptr, yind + HKerSize, xind + HKerSize, (float)xind / kradius);
-                                                CvInvoke.cvSetReal2D(kery_ptr, yind + HKerSize, xind + HKerSize, (float)yind / kradius);
-                                            }
-                                            else
-                                            {
-                                                CvInvoke.cvSetReal2D(kerx_ptr, yind + HKerSize, xind + HKerSize, 0);
-                                                CvInvoke.cvSetReal2D(kery_ptr, yind + HKerSize, xind + HKerSize, 0);
-                                            }
+                                            CvInvoke.cvSetReal2D(kerx_ptr, yind + HKerSize, xind + HKerSize, (float)xind / kradius);
+                                            CvInvoke.cvSetReal2D(kery_ptr, yind + HKerSize, xind + HKerSize, (float)yind / kradius);
+                                        }
+                                        else
+                                        {
+                                            CvInvoke.cvSetReal2D(kerx_ptr, yind + HKerSize, xind + HKerSize, 0);
+                                            CvInvoke.cvSetReal2D(kery_ptr, yind + HKerSize, xind + HKerSize, 0);
                                         }
                                     }
-                                    //Update to have better screening for candidates of template averge based on the gradient method used to locate fiducial positions
-                                    kerx = CvInvoke.CvArrToMat(kerx_ptr);
-                                    kery = CvInvoke.CvArrToMat(kery_ptr);
                                 }
+                                //Update to have better screening for candidates of template averge based on the gradient method used to locate fiducial positions
+                                kerx = CvInvoke.CvArrToMat(kerx_ptr);
+                                kery = CvInvoke.CvArrToMat(kery_ptr);
                             }
+                        }
 
-                        } 
+                        
  
                         CvInvoke.MatchTemplate(matbuffer0, submatbuffer, submatbuffer_match, TemplateMatchingType.CcorrNormed);//CcoeffNormed correlation of signal above average
                         if (PseudoAttentionRequest)
                         {
                             //painted with color 0 over circles of expected fiducial locations according to fit
                             PsAttentionslices[nslice].ConvertTo(Attention_slice_mat, DepthType.Cv8U, 1, 0);
-                            CvInvoke.Threshold(Attention_slice_mat, matbuffer4, 1, 0xFF, ThresholdType.BinaryInv); //matbuffer6= Attention_slice_mat<1? 0xFF:0 (used as mask to pick color 0)
-                            ///Changed in 6July22 to remove spot artifacts of attention in predicted location when STD of image is low
-                            ///CvInvoke.Multiply(matbuffer4, matbuffer0, matbuffer2, 1.0, DepthType.Cv32F);
-                            ///CvInvoke.MatchTemplate(matbuffer2, submatbuffer, submatbuffer_match_attention, TemplateMatchingType.CcorrNormed);//CcoeffNormed correlation of signal above average, with matbuffer6 as mask
-                            //CvInvoke.Resize(matbuffer4, matbuffer4, new Size(submatbuffer_match.Width, submatbuffer_match.Height));
-                            //CvInvoke.MatchTemplate(matbuffer2, submatbuffer, submatbuffer_match_attention, TemplateMatchingType.CcorrNormed, matbuffer4);//6July11 added the mask to avoid catching the margins of the spots. CcoeffNormed correlation of signal above average, with matbuffer6 as mask
-                            //CvInvoke.Threshold(submatbuffer_match_attention, matbuffer4, match_att_avg, 0xFF, ThresholdType.Binary); //if above average these are the spots
-                            //matbuffer4.ConvertTo(matbuffer4, DepthType.Cv8U, 1, 0);
-                            //CvInvoke.Erode(matbuffer4, matbuffer4, ex_kmask, anchor: new System.Drawing.Point(-1, -1), 3, BorderType.Replicate, new MCvScalar(0)); //3 iterations erode
-                            //double background_mask = (double)CvInvoke.Mean(submatbuffer_match_attention, matbuffer4).V0;
-                            //submatbuffer_match_attention.ConvertTo(submatbuffer_match_attention, DepthType.Cv32F, 1.0d, -background_mask); //subtract background level
-                            //CvInvoke.Multiply(matbuffer4, submatbuffer_match_attention, submatbuffer_match_attention, 1.0d / 255, DepthType.Cv32F);
-                            //Mat zerosa = new Mat(submatbuffer_match_attention.Height, submatbuffer_match_attention.Width, DepthType.Cv32F, 1);
-                            //CvInvoke.Max(zerosa, submatbuffer_match_attention, submatbuffer_match_attention);
-
-                            //6Jul22 consider only to enahance the level over the spot, but delicate enough to so not to generate artifacts 
+                            CvInvoke.Threshold(Attention_slice_mat, matbuffer4, 1, 0xFF, ThresholdType.BinaryInv); //matbuffer4= Attention_slice_mat<1? 0xFF:0 (used as mask to pick color 0)
                             CvInvoke.Resize(matbuffer4, matbuffer4, new Size(submatbuffer_match.Width, submatbuffer_match.Height));
                             double match_avg = (double)CvInvoke.Mean(submatbuffer_match,matbuffer4).V0;
                             submatbuffer_match.ConvertTo(submatbuffer_match_attention, DepthType.Cv32F, 1.0d, -match_avg);
-                            matbuffer4.ConvertTo(matbuffer4, DepthType.Cv32F, 0.5d/255, 0);
+                            matbuffer4.ConvertTo(matbuffer4, DepthType.Cv32F,0.5d/255, 0);
                             int sm_size = (int)Math.Round(fidsize);
                             if (sm_size % 2 == 0) sm_size--;
                             if (sm_size < 1) sm_size = 1;
@@ -788,7 +784,7 @@ namespace ClusterAlign
                             CvInvoke.Multiply(matbuffer4, submatbuffer_match_attention, submatbuffer_match_attention, 1.0d , DepthType.Cv32F);
                             //win1 = "matching template";
                             //Program.show_grayimage(submatbuffer_match_attention, win1, Nrows - exclude_radius * 2, Ncols - exclude_radius * 2);
-                            CvInvoke.Add(submatbuffer_match, submatbuffer_match_attention, submatbuffer_match); //attention locations should not get boosted, only features within
+                            CvInvoke.Add(submatbuffer_match, submatbuffer_match_attention, submatbuffer_match); //features within attention locations should get boosted
                         }
 
                         CvInvoke.GaussianBlur(submatbuffer_match, submatbuffer_match, new System.Drawing.Size(3, 3), 0, 0);
@@ -819,7 +815,7 @@ namespace ClusterAlign
                         {
                             matbuffer7.ConvertTo(matbuffer6, DepthType.Cv8U, 1, 0);
                         }
-                        ThresholdG = Program.FindThreshold(matbuffer0, matbuffer6, NfidMax, ex_kmask_area, divergence_bright);
+                        ThresholdG = Program.FindThreshold(matbuffer0, matbuffer6, NfidMax, ex_kmask_area, divergence_bright, ref Threshold_normal);
                         CvInvoke.Threshold(matbuffer0, matbuffer2, ThresholdG, 0xFF, ThresholdType.Binary); //matbuffer3= matbuffer2=matbuffer0>ThresholdG? 0xFF:0 
                         matbuffer2.ConvertTo(matbuffer3, DepthType.Cv8U);
                         CvInvoke.BitwiseAnd(localmaxima, matbuffer3, matbuffer4); //matbuffer4= localmaxima & matbuffer3
@@ -836,14 +832,18 @@ namespace ClusterAlign
                                 if (Convert.ToByte(arr_matbuffer4.GetValue(row, col)) == 0xFF && NFid[nslice] < NfidMax)
                                 {
                                     flag_record = true;
-                                    for (int ind_exc = NFid[nslice] - 1; ind_exc >= 0; ind_exc--)
+                                    //if not in prioritized position exclude near recent found fiducial. if second iteration skip if the point within attention location 
+                                    if (!PseudoAttentionRequest || Attention_slice_mat.GetValue(row,col)>0)
                                     {
-                                        if (Math.Abs(row - locations[nslice, ind_exc].row) <= exclude_radius && Math.Abs(col - locations[nslice, ind_exc].col) <= exclude_radius)
+                                        for (int ind_exc = NFid[nslice] - 1; ind_exc >= 0; ind_exc--)
                                         {
-                                            if (Math.Sqrt(Math.Pow((row - locations[nslice, ind_exc].row), 2) + Math.Pow((col - locations[nslice, ind_exc].col), 2)) <= exclude_radius)
+                                            if (Math.Abs(row - locations[nslice, ind_exc].row) <= exclude_radius && Math.Abs(col - locations[nslice, ind_exc].col) <= exclude_radius)
                                             {
-                                                flag_record = false;
-                                                break;
+                                                if (Math.Sqrt(Math.Pow((row - locations[nslice, ind_exc].row), 2) + Math.Pow((col - locations[nslice, ind_exc].col), 2)) <= exclude_radius)
+                                                {
+                                                    flag_record = false;
+                                                    break;
+                                                }
                                             }
                                         }
                                     }
@@ -1208,7 +1208,7 @@ namespace ClusterAlign
                     }
                 }
 
-                attention_size = Math.Max((int)(model_error * Math.Sqrt(2) + fidsize),20);
+                attention_size = (int)(Math.Max(model_error * Math.Sqrt(2),20) + fidsize*1.5);
                 
 
                 //Forcefill is the flag to use iterations. The knowledge acquired in iterations is the attention table.
@@ -1698,8 +1698,9 @@ namespace ClusterAlign
             temp_gradx.ConvertTo(gradx, DepthType.Cv32F);
             temp_grady.ConvertTo(grady, DepthType.Cv32F);
         }
-        public static float FindThreshold(Mat source, IInputArray mask, int NfidMax, int kmask_area, bool bright_features)
+        public static float FindThreshold(Mat source, IInputArray mask, int NfidMax, int kmask_area, bool bright_features, ref bool Threshold_normal)
         {
+            Threshold_normal = true;
             double minVal = 0;
             double maxVal = 0;
             double mutiply_factor = 1;// mask==null? 1.2:1.2;// if mask is still not ready then prepare more candidates of fiducials, so expand their allowed numbers
@@ -1771,6 +1772,7 @@ namespace ClusterAlign
             if (counter>0 && approx_count< NfidMax*20) return threshold; //normally will exit here
 
             //As back plan count according to histogram
+            Threshold_normal = false;
             int size = 256;
             int[] channels = new int[] { 1 };
             int[] histsize = new int[] { size };

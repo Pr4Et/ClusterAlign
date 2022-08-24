@@ -32,7 +32,7 @@ namespace ClusterAlign
 {
     public class Program
     {
-        static String Version_information = "ClusterAlign (ver 2022-Aug-05).";
+        static String Version_information = "ClusterAlign (ver 2022-Aug-23).";
         static bool xisRotation = ClusterAlign.Settings4ClusterAlign2.Default.xisRotation;
         static svector[] match_tolerance;
         static int cluster_size = ClusterAlign.Settings4ClusterAlign2.Default.cluster_size; //max radius of a single cluster
@@ -130,7 +130,7 @@ namespace ClusterAlign
             int KerSize2ndOut = 2 * HKerSize2ndOut + 1;
             double minVal = 0;
             double maxVal = 0;
-            int exclude_radius = Math.Max(25, (int)(fidsize*1.2));
+            int exclude_radius = Math.Max(Math.Min(25,(int)(fidsize*3.0)), (int)(fidsize*1.2));
             //int level_expected = (int)(0.3*NfidMax); //number of cluster members expected, very tentative number
             System.Drawing.Point locationh = new System.Drawing.Point(0, 0);
             System.Drawing.Point locationl = new System.Drawing.Point(0, 0);
@@ -489,7 +489,7 @@ namespace ClusterAlign
                         }
 
                         //High pass filter to matbuffer
-                        high_pass_size = (int)MathF.Floor(fidsize*20 );
+                        high_pass_size = (int)MathF.Floor(fidsize*10 );//23Aug22 changed from 20 to 10
                         high_pass_size = (high_pass_size % 2 == 1) ? high_pass_size : high_pass_size + 1;
                         CvInvoke.GaussianBlur(slice_mat, matbuffer2, new System.Drawing.Size(high_pass_size, high_pass_size), 0, 0);
                         CvInvoke.Subtract(slice_mat, matbuffer2, matbuffer); //remove large features (like shadows), store in matbuffer
@@ -502,64 +502,79 @@ namespace ClusterAlign
                         //win1 = "normal";
                         //Program.show_grayimage(slice_mat, win1, Nrows, Ncols);
 
-                        //**** acquire gradients in the x and y directions ****
-                        Program.SpatialGradient(slice_mat, ref gradx, ref grady); //must use non high pass filtered so the margins will make 0 divergence
-                        // **** Calculate Sqrt((Gradx(*)Kerx)^2+(Grady(*)Kery)^2).  (*) denotes convolution
-                        CvInvoke.Filter2D(gradx, matbuffer0, ex_kerx, anchor: new System.Drawing.Point(-1, -1));// Convolute gradx with kerx,  anchor point at the center , save in matbuffer0
-                        CvInvoke.Multiply(matbuffer0, matbuffer0, matbuffer2);//matbuffer2=matbuffer0.^2
-                        CvInvoke.Filter2D(grady, matbuffer0, ex_kery, anchor: new System.Drawing.Point(-1, -1));// Convolute grady with kery,  anchor point at the center , save in matbuffer0
-                        CvInvoke.Multiply(matbuffer0, matbuffer0, matbuffer0);//matbuffer0=matbuffer0.^2
-                        CvInvoke.Add(matbuffer2, matbuffer0, matbuffer2);//matbuffer2=matbuffer2+matbuffer0
-                        CvInvoke.Sqrt(matbuffer2, matbuffer7);//matbuffer7=sqrt(matbuffer2) = divergence
-                        //remove high divergence lines due to borders
-                        Image<Gray, float> img7 = matbuffer7.ToImage<Gray, float>();
-                        for (int linn = 2; linn < Ncols / 3; linn++)
+                        if (!fiducials_bright)
+                        { CvInvoke.Subtract(zeros0, matbuffer, matbuffer); }
+                        CvInvoke.MinMaxLoc(matbuffer, ref minVal, ref maxVal, ref locationl, ref locationh);
+                        matbuffer.ConvertTo(matbuffer, DepthType.Cv32F, 1d, -minVal);
+                        CvInvoke.GaussianBlur(matbuffer, matbuffer, new System.Drawing.Size(3, 3), 0, 0);
+
+                        if (fidsize >= 4.5) //Condition for doing gradient analysis
                         {
-                            img7.ROI = new Rectangle(1, 1, linn - 1, Nrows - 1);
-                            if (img7.CountNonzero()[0] > 0)
+                            //**** acquire gradients in the x and y directions ****
+                            Program.SpatialGradient(slice_mat, ref gradx, ref grady); //must use non high pass filtered so the margins will make 0 divergence
+                                                                                      // **** Calculate Sqrt((Gradx(*)Kerx)^2+(Grady(*)Kery)^2).  (*) denotes convolution
+                            CvInvoke.Filter2D(gradx, matbuffer0, ex_kerx, anchor: new System.Drawing.Point(-1, -1));// Convolute gradx with kerx,  anchor point at the center , save in matbuffer0
+                            CvInvoke.Multiply(matbuffer0, matbuffer0, matbuffer2);//matbuffer2=matbuffer0.^2
+                            CvInvoke.Filter2D(grady, matbuffer0, ex_kery, anchor: new System.Drawing.Point(-1, -1));// Convolute grady with kery,  anchor point at the center , save in matbuffer0
+                            CvInvoke.Multiply(matbuffer0, matbuffer0, matbuffer0);//matbuffer0=matbuffer0.^2
+                            CvInvoke.Add(matbuffer2, matbuffer0, matbuffer2);//matbuffer2=matbuffer2+matbuffer0
+                            CvInvoke.Sqrt(matbuffer2, matbuffer7);//matbuffer7=sqrt(matbuffer2) = divergence
+                                                                  //remove high divergence lines due to borders
+                            Image<Gray, float> img7 = matbuffer7.ToImage<Gray, float>();
+                            for (int linn = 2; linn < Ncols / 3; linn++)
                             {
-                                img7.ROI = new Rectangle(0, 0, linn + 12, Nrows);
-                                img7.SetValue(new MCvScalar(0));
-                                break;
+                                img7.ROI = new Rectangle(1, 1, linn - 1, Nrows - 1);
+                                if (img7.CountNonzero()[0] > 0)
+                                {
+                                    img7.ROI = new Rectangle(0, 0, linn + 12, Nrows);
+                                    img7.SetValue(new MCvScalar(0));
+                                    break;
+                                }
                             }
+                            for (int linn = 2; linn < Nrows / 3; linn++)
+                            {
+                                img7.ROI = new Rectangle(1, 1, Ncols - 2, linn - 1);
+                                int cntr = img7.CountNonzero()[0];
+                                if (img7.CountNonzero()[0] > 0)
+                                {
+                                    img7.ROI = new Rectangle(0, 0, Ncols, linn + 12);
+                                    img7.SetValue(new MCvScalar(0));
+                                    break;
+                                }
+                            }
+                            for (int linn = 2; linn < Ncols / 3; linn++)
+                            {
+                                img7.ROI = new Rectangle(Ncols - linn, 1, linn - 1, Nrows - 2);
+                                if (img7.CountNonzero()[0] > 0)
+                                {
+                                    img7.ROI = new Rectangle(Ncols - linn - 12, 0, linn + 12, Nrows);
+                                    img7.SetValue(new MCvScalar(0));
+                                    break;
+                                }
+                            }
+                            for (int linn = 2; linn < Nrows / 3; linn++)
+                            {
+                                img7.ROI = new Rectangle(1, Nrows - linn, Ncols - 2, linn - 1);
+                                if (img7.CountNonzero()[0] > 0)
+                                {
+                                    img7.ROI = new Rectangle(0, Nrows - linn - 12, Ncols, linn + 12);
+                                    img7.SetValue(new MCvScalar(0));
+                                    break;
+                                }
+                            }
+                            img7.ROI = Rectangle.Empty;
+                            matbuffer7 = img7.Mat;   //This is image sensitive to gradients around the markers that fit inside the ring of expected radii
+                            CvInvoke.GaussianBlur(matbuffer7, matbuffer7, new System.Drawing.Size(3, 3), 0, 0);
+                            //win1 = "mat7=div";
+                            //Program.show_grayimage(matbuffer7, win1, Nrows, Ncols);
+                            //CvInvoke.WaitKey(2000);
                         }
-                        for (int linn = 2; linn < Nrows / 3; linn++)
+                        else //case of tiny particles, copy filtered image to matbuffer7 regarded as divergence image (23Aug22)
                         {
-                            img7.ROI = new Rectangle(1, 1, Ncols - 2, linn - 1);
-                            int cntr = img7.CountNonzero()[0];
-                            if (img7.CountNonzero()[0] > 0)
-                            {
-                                img7.ROI = new Rectangle(0, 0, Ncols, linn + 12);
-                                img7.SetValue(new MCvScalar(0));
-                                break;
-                            }
+                            matbuffer.CopyTo(matbuffer7);
+ 
                         }
-                        for (int linn = 2; linn < Ncols / 3; linn++)
-                        {
-                            img7.ROI = new Rectangle(Ncols - linn, 1, linn - 1, Nrows - 2);
-                            if (img7.CountNonzero()[0] > 0)
-                            {
-                                img7.ROI = new Rectangle(Ncols - linn - 12, 0, linn + 12, Nrows);
-                                img7.SetValue(new MCvScalar(0));
-                               break;
-                            }
-                        }
-                        for (int linn = 2; linn < Nrows / 3; linn++)
-                        {
-                            img7.ROI = new Rectangle(1, Nrows - linn, Ncols - 2, linn - 1);
-                            if (img7.CountNonzero()[0] > 0)
-                            {
-                                img7.ROI = new Rectangle(0, Nrows - linn - 12, Ncols, linn + 12);
-                                img7.SetValue(new MCvScalar(0));
-                                break;
-                            }
-                        }
-                        img7.ROI = Rectangle.Empty;
-                        matbuffer7 = img7.Mat;   //This is image sensitive to gradients around the markers that fit inside the ring of expected radii
-                        CvInvoke.GaussianBlur(matbuffer7, matbuffer7, new System.Drawing.Size(3, 3), 0, 0);
-                        //win1 = "mat7=div";
-                        //Program.show_grayimage(matbuffer7, win1, Nrows, Ncols);
-                        //CvInvoke.WaitKey(2000);
+
 
                         if (isAttentionRequest)
                         {
@@ -571,23 +586,17 @@ namespace ClusterAlign
                             CvInvoke.Multiply(matbuffer, matbuffer6, matbuffer, 1.0, DepthType.Cv32F);
                         }
                         //keep matbuffer6 that holds attention mask, and update matbuffer7 to include features only at the attention spots
-                        // win1 = "mat7=attention";
-                        // Program.show_grayimage(matbuffer7, win1, Nrows, Ncols);
+                        //win1 = "mat7=attention";
+                        //Program.show_grayimage(matbuffer7, win1, Nrows, Ncols);
                         //win1 = "mat=attention";
                         //Program.show_grayimage(matbuffer, win1, Nrows, Ncols);
-
-
-
 
                         CvInvoke.MinMaxLoc(matbuffer7, ref minVal, ref maxVal, ref locationl, ref locationh);
                         matbuffer7.ConvertTo(matbuffer7, DepthType.Cv32F, 1d, -minVal);
                         
-                        if (!fiducials_bright)
-                        { CvInvoke.Subtract(zeros0, matbuffer, matbuffer); }
-                        CvInvoke.MinMaxLoc(matbuffer, ref minVal, ref maxVal, ref locationl, ref locationh);
-                        matbuffer.ConvertTo(matbuffer, DepthType.Cv32F, 1d, -minVal);
-                        CvInvoke.GaussianBlur(matbuffer, matbuffer, new System.Drawing.Size(3, 3), 0, 0);
-                        CvInvoke.Multiply(matbuffer, matbuffer, matbuffer0);//matbuffer0=matbuffer*matbuffer
+                         CvInvoke.Multiply(matbuffer, matbuffer, matbuffer0);//matbuffer0=matbuffer*matbuffer
+
+
 
                         MCvScalar avgmat = CvInvoke.Mean(matbuffer0, null);
                         if (!ClusterAlign.Settings4ClusterAlign2.Default.coswindow)
@@ -609,8 +618,8 @@ namespace ClusterAlign
                                 marginx = xsize;
                             }
                         }
-                        //show win1 = "mat*mat7";
-                        //show Program.show_grayimage(matbuffer0, win1, Nrows, Ncols);
+                        //win1 = "mat";
+                        //Program.show_grayimage(matbuffer0, win1, Nrows, Ncols);
 
                         CvInvoke.Dilate(matbuffer7, matbuffer2, ex_kmaskDilate, anchor: new System.Drawing.Point(-1, -1), 1, BorderType.Default, new MCvScalar(0));//Dilate one iteration:  replace neighborhoods with maxima and save in matbuffer2
                         CvInvoke.Compare(matbuffer2, matbuffer7, localmaxima, CmpType.Equal); //localmaxima= xFF at locations of local peaks of divergenece (based on comparison of dilation with original image)
@@ -690,7 +699,7 @@ namespace ClusterAlign
                             }
                         }
 
-                        if (NFid[nslice] > 3 && NFid[nslice]>0.2*NfidMax) 
+                        if (NFid[nslice] > 3 && NFid[nslice]>0.15*NfidMax) 
                         {       
                             submatbuffer.ConvertTo(submatbuffer, DepthType.Cv32F, 1.0d / NFid[nslice]); //normalize accumulated images to average 8U/32F
                         } 

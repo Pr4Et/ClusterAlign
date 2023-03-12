@@ -124,9 +124,9 @@ for n=1:ntilts2
 end
 %align b with respect to a, based on center slices
 vect=1:length(angles1);
-ind1=min(vect(angles1==min(abs(angles1))));
+ind1=min(vect(abs(angles1)==min(abs(angles1))));
 vect=1:length(angles2);
-ind2=min(vect(angles2==min(abs(angles2))));
+ind2=min(vect(abs(angles2)==min(abs(angles2))));
 imag1=tilt1(:,:,ind1);
 imag2=tilt2(:,:,ind2);
 
@@ -279,7 +279,7 @@ for idx=1:length(angles)
     simag1c=mean(imag(:,round(0.35*numrows):round(0.65*numrows)),2);%average of every col
     del_linesc=simag1c(2:numcols)-simag1c(1:numcols-1);
     del_lines_usualc=median(abs(del_linesc));
-    vect=3:round(0.4*numrows);
+    vect=3:round(0.3*numrows);
     if max(abs(del_lines(vect)))>10*del_lines_usual
         margin_row1=min(vect(abs(del_lines(vect))==max(abs(del_lines(vect)))))+1;
         temp1=double(imag(round(0.35*numcols):round(0.65*numcols),2:margin_row1-2));
@@ -292,7 +292,7 @@ for idx=1:length(angles)
     else
         margin_row1=1;
     end
-    vect=round(0.6*numrows):numrows-2;
+    vect=round(0.7*numrows):numrows-2;
     if max(abs(del_lines(vect)))>10*del_lines_usual
         margin_row2=max(vect(abs(del_lines(vect))==max(abs(del_lines(vect)))));
         temp1=double(imag(round(0.35*numcols):round(0.65*numcols),margin_row2+2:numrows));
@@ -305,7 +305,7 @@ for idx=1:length(angles)
     else
         margin_row2=numrows;
     end
-    vectc=3:round(0.4*numcols);
+    vectc=3:round(0.3*numcols);
     if max(abs(del_linesc(vectc)))>10*del_lines_usualc
         margin_col1=min(vectc(abs(del_linesc(vectc))==max(abs(del_linesc(vectc)))))+1;
         temp1=double(imag(2:margin_col1-2,round(0.35*numrows):round(0.65*numrows)));
@@ -318,7 +318,7 @@ for idx=1:length(angles)
     else
         margin_col1=1;
     end
-    vectc=round(0.6*numcols):numcols-2;
+    vectc=round(0.7*numcols):numcols-2;
     if max(abs(del_linesc(vectc)))>10*del_lines_usualc
         margin_col2=max(vectc(abs(del_linesc(vectc))==max(abs(del_linesc(vectc)))));
         temp1=double(imag(margin_col2+2:numcols,round(0.35*numrows):round(0.65*numrows)));

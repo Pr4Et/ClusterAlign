@@ -55,6 +55,8 @@ alifile2=char(subpar{1});
 disp(sprintf('File b: %s', alifile2));
 anglefile2=char(subpar{2});
 
-reconstruct_dual(cosine,phi_deg1,psi_deg1,alifile1,anglefile1,phi_deg2,psi_deg2,alifile2,anglefile2);
+bin=input('binning=');%4;
+nZ=input('Thickness=');%200;
+reconstruct_dual(cosine,phi_deg1,psi_deg1,alifile1,anglefile1,phi_deg2,psi_deg2,alifile2,anglefile2,bin,nZ);
 disp('Findished dual reconsruction')
 

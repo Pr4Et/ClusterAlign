@@ -4,7 +4,7 @@ Written by Shahar Seifer, in Elbaum lab, Weizmann Institute of Science <br />
 Citation: Seifer,S.& Elbaum, M., ClusterAlign: A fiducial tracking and tilt series alignment tool for thick sample tomography. Biological Imaging, 2, E7 (2022). doi:10.1017/S2633903X22000071  <br/>
 
 The client side is run from a single Python module main.py, where the settings are configured in the user manageable sections. It is easy to modify the code for scripts in batch processing. <br />
-The client program requires a username and password of FTP site, which you may install on the server (see details in the Python code).<br />
+The client program requires a username and password of FTP site (for express setup use MobaXterm- Tools- Network Services- FTP Server -Play). The FTP server may be installed on the server (see details in the Python code).<br />
 
 Server installation is based on a single docker image:<br />
 docker pull 0525214954/clusteralign_server:latest<br />

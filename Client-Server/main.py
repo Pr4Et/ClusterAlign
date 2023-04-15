@@ -1,15 +1,15 @@
-﻿#ClusterAlign client  (ver. 2023Apr08)
+#ClusterAlign client  (ver. 2023Apr15)
 #Written by Shahar Seifer (C) 2023, Elbaum lab, Weizmann Institute of Science
 #GPL-v3 license
 #Tested on PyCharm compiler
 #For docker installation on server, see https://docs.docker.com/desktop/install/ubuntu/
-#For docker installation on AWS EC2 server using Amazon Linux:  sudo yum install docker,  sudo systemctl start docker,  (open ports 21 and 110 in security configurations).
+#For docker installation on AWS EC2 server (charged by the hour) see details below.
 #The server program is found in docker.io/0525214954/clusteralign_server
 #For server installation use: docker pull 0525214954/clusteralign_server:latest
-#For setting up an FTP server (typically on the server) see details in the end of this code, or use: https://www.geeksforgeeks.org/how-to-setup-and-configure-an-ftp-server-in-linux-2/ avoiding security measures
 #For running docker container on the server use:
 # docker run -it --rm -p <server IP>:110:110 --privileged 0525214954/clusteralign_server
 #To access the server source code or run Octave scripts you can stop the docker container by Ctrl+C on the server side.
+#For setting up an FTP server (typically on the server) see details in the end of this code
 #Article/citation: Seifer, S., & Elbaum, M. (2022). ClusterAlign: A fiducial tracking and tilt series alignment tool for thick sample tomography. Biological Imaging, 2, E7. doi:10.1017/S2633903X22000071
 
 import os
@@ -20,22 +20,38 @@ import ftplib
 import base64
 import io
 import psutil
-#When using EC2 server on AWS (alternative to local server) you need the following to start and stop the container from running:
-#import sys
-#import boto3
-#from botocore.exceptions import ClientError
-#ec2 = boto3.client('ec2')
-#EC2_instance_id=
+
+""" For server installation on EC2 AWS (Amazon) ##
+# You need access to AWS root account.
+# Create an EC2 instance with sufficient resources (at least 40GB, and several CPU cores), with ports 21 and 110 open in security configurations,
+# with Amazon Linux, and click connect
+# In Amazon Linux command line: sudo yum install docker,  sudo systemctl start docker,
+# docker pull 0525214954/clusteralign_server:latest
+# nano .bashrc,   add the line:
+# docker run -it --rm -p 110:110 --privileged 0525214954/clusteralign_server
+# Stop the instance (to avoid charges).
+# Create Elastic IP (permanent address) and attach it to the instance.
+# In AWS main menu choose IAM, make sure you select the same server farm (top right corner of the screen) and add a user with permission: AmazonEC2FullAccess.
+# Click on the user link and find the Create Access Key. Use it to generate ID and secret access key and pass it to the empty strings below.
+# Set UseAWS = True to enable starting and stopping EC2 instance on AWS from running:
+"""
+UseAWS = False
+if UseAWS:
+    import sys
+    import boto3
+    from botocore.exceptions import ClientError
+    EC2_client= boto3.client('ec2', region_name='',aws_access_key_id='', aws_secret_access_key='') #Use the access key you generated in IAM
+    EC2_instance_id="" # the number is found in your EC2 instance list
 
 
 context = zmq.Context()
 # Socket to talk to server
 socket = context.socket(zmq.REQ)
-socket.connect("tcp://10.0.0.17:110")  # write tcp://<IP of server>:110
+socket.connect("tcp://XXX.XX.XX.XXX:110")  # write tcp://<IP of server>:110
 # FTP connection parameters
-ftpHost = '10.0.0.17' # Write IP of FTP server here or DNS name of your organization FTP
+ftpHost = 'XXX.XX.XX.XXX' # Write IP of FTP server here or DNS name of your organization FTP
 ftpUname = 'ftpuser'
-ftpPass = 'stem'
+ftpPass = ''
 ftpPath = '' # actual folder in server is /home/ftpuser' but we write '' if we are using default vsftpd settings
 
 
@@ -52,7 +68,8 @@ def main():
     showFTP(ftpHost,ftpUname,ftpPass,ftpPath)
     #Alignment
     if operation_step == 0:
-        #AWS_EC2(EC2_instance_id, "ON")  #Start to run container on AWS server (charges may apply). Alternative for local server
+        if UseAWS:
+            AWS_EC2(EC2_client,EC2_instance_id, "ON")  #Start to run container on AWS server (charges may apply). Alternative for local server
         purgeFTP(ftpHost,ftpUname,ftpPass,ftpPath)  #Remove previous files from FTP folder
         sendfile(LocalPath,LocalDataFileName,DataFileName,ftpHost,ftpUname,ftpPass,ftpPath)  #send to FTP
         sendfile(LocalPath,LocalTiltFileName,TiltFileName,ftpHost,ftpUname,ftpPass,ftpPath)
@@ -123,7 +140,8 @@ def main():
     #Cleaning and stopping
     if operation_step == 2:
         say("Purge")  #remove files from local folder (/shared) on server
-        # AWS_EC2(EC2_instance_id, "OFF")  #Stop container on AWS server (you can also set automatic termination in their site)
+        if UseAWS:
+            AWS_EC2(EC2_client,EC2_instance_id, "OFF")  #Stop container on AWS server (you can also set automatic termination in their site)
 
     socket.close()
 
@@ -194,33 +212,35 @@ def say(what):
     message = socket.recv_string(0) #flags (int) – 0 or NOBLOCK.
     print(message)
 
-def AWS_EC2(instance_id,action):
+def AWS_EC2(EC2_client,instance_id,action):
     #Copied from https://boto3.amazonaws.com/v1/documentation/api/latest/guide/ec2-example-managing-instances.html
+    #modified according to https://hands-on.cloud/boto3-ec2-tutorial/
+
     if action == 'ON':
         # Do a dryrun first to verify permissions
         try:
-            ec2.start_instances(InstanceIds=[instance_id], DryRun=True)
+            EC2_client.start_instances(InstanceIds=[instance_id], DryRun=True)
         except ClientError as e:
             if 'DryRunOperation' not in str(e):
                 raise
 
         # Dry run succeeded, run start_instances without dryrun
         try:
-            response = ec2.start_instances(InstanceIds=[instance_id], DryRun=False)
+            response = EC2_client.start_instances(InstanceIds=[instance_id], DryRun=False)
             print(response)
         except ClientError as e:
             print(e)
     else:
         # Do a dryrun first to verify permissions
         try:
-            ec2.stop_instances(InstanceIds=[instance_id], DryRun=True)
+            EC2_client.stop_instances(InstanceIds=[instance_id], DryRun=True)
         except ClientError as e:
             if 'DryRunOperation' not in str(e):
                 raise
 
         # Dry run succeeded, call stop_instances without dryrun
         try:
-            response = ec2.stop_instances(InstanceIds=[instance_id], DryRun=False)
+            response = EC2_client.stop_instances(InstanceIds=[instance_id], DryRun=False)
             print(response)
         except ClientError as e:
             print(e)
@@ -232,6 +252,7 @@ if __name__=="__main__":
 
 """
 How to set up FTP server with username and password that both server and client can access
+Based on https://www.geeksforgeeks.org/how-to-setup-and-configure-an-ftp-server-in-linux-2/ avoiding security measures.
 Important notes:
 1. use dedicated folder for the clusteralign files, since purge command will remove all files on the directory
 2. In case your organization blocks file sharing you are encouraged to use your orginzation dedicated FTP site

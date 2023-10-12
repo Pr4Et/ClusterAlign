@@ -61,11 +61,16 @@ namespace ClusterAlign
         public static string ftpUname = "";
         public static string ftpPass = "";
         public static string ftpHost = "";
+	public static bool useFTP=true;
+	public static bool useLocalDir=false;
+	public static bool useRclone=false;
+	public static string RemoteMount="";
+
 
     }
     public class Program
     {
-        static String Version_information = "ClusterAlign Server (ver 2023-Mar-26).";
+        static String Version_information = "ClusterAlign Server (ver 2023-Sep-30).";
         static bool xisRotation;// = ClusterAlign.Settings4ClusterAlign2.Default.xisRotation;
         static svector[] match_tolerance;
         static int cluster_size;// = ClusterAlign.Settings4ClusterAlign2.Default.cluster_size; //max radius of a single cluster
@@ -111,11 +116,45 @@ namespace ClusterAlign
                 do
                 {
                     contact = server.TryReceiveFrameString(new TimeSpan(10), out msgzmq);
-                    if (contact)
+		    if (contact)
                     {
-                        contact = (msgzmq == "Set");
-                        if (contact)
-                            server.SendFrame("OK");
+			server.SendFrame("OK");
+                        contact=false;
+			if (msgzmq == "Set")
+				contact=true;
+			else if(msgzmq == "Rclone")
+			{
+				string[] assemblefile=new string[100];
+				for (int n=0; n<100; n++) {assemblefile[n]="";}
+				int nn=0;
+				for (int n=0; n<100; n++)
+				{
+					contact=server.TryReceiveFrameString(new TimeSpan(1000),out msgzmq);
+					if (contact)
+					{
+						if (!msgzmq.Equals("Endconfig"))
+						{
+							server.SendFrame("OK");
+							assemblefile[nn]=msgzmq;
+							nn=nn+1;
+						}
+						else
+						{
+							server.SendFrame("Configuring Rclone");
+							break;
+						}
+					}	
+				}
+				File.WriteAllLines(Environment.GetEnvironmentVariable("HOME")+"//.config//rclone//rclone.conf",assemblefile);
+				settings.useFTP=false;
+				settings.useLocalDir=false;
+				settings.useRclone=true;
+				settings.PathTmp = "/shared";
+                                System.Diagnostics.ProcessStartInfo startInfo4 = new System.Diagnostics.ProcessStartInfo() { FileName = "/usr/bin/rclone", Arguments = "config --config=\"rclone.conf\" ", };
+                                System.Diagnostics.Process proc4 = new System.Diagnostics.Process() { StartInfo = startInfo4, };
+                                proc4.Start();
+				contact=false;
+			}
                         else if(msgzmq == "Purge")
                         {
                             server.SendFrame("Removing temporary files");
@@ -142,10 +181,26 @@ namespace ClusterAlign
                         {
                             element = msgzmq.Split('=');
                             //if (element[0] == "Path") settings.Path = element[1]; //should be local path in the client computer
+                            if (element[0] == "useFTP") 
+		            {
+				settings.useFTP = true;
+				settings.PathTmp= "/Temp";
+			    }
+                            if (element[0] == "ServerLocalDir")
+			    { settings.useLocalDir = true;
+			      settings.PathTmp=element[1];
+			    }
+                            if (element[0] == "ftpPath") settings.ftpPath = element[1];
+
                             if (element[0] == "ftpPath") settings.ftpPath = element[1];
                             if (element[0] == "ftpPass") settings.ftpPass = element[1];
                             if (element[0] == "ftpUname") settings.ftpUname = element[1];
                             if (element[0] == "ftpHost") settings.ftpHost = element[1];
+			    if (element[0] == "RemoteMount") 
+			    {
+				settings.RemoteMount = element[1];
+				settings.PathTmp = "/shared";
+			    }
                             if (element[0] == "DataFileName") settings.DataFileName = element[1];
                             if (element[0] == "TiltFileName") settings.TiltFileName = element[1];
                             if (element[0] == "loadfidFile") settings.loadfidFile = element[1];
@@ -178,7 +233,8 @@ namespace ClusterAlign
                 } while (!(msgzmq=="Start") && !(msgzmq=="Fail")&&!(msgzmq == "Reconstruct"));
                 if (msgzmq == "Start" || msgzmq == "Reconstruct")
                 {
-                    pathIN = settings.Path;
+                    
+		    pathIN = settings.Path;
                     pathOUT = settings.PathTmp;
                     slash = "/";
                     /*if (path.Length > 1)
@@ -189,17 +245,41 @@ namespace ClusterAlign
                         }
                     }*/
                     FileName = pathOUT + slash + settings.DataFileName; //dataset, may be tif or mrc
-                    //Mount the FTP site provided by the user temporarily on /shared    (requires "apt install curlftpfs" one time in command line)
                     report_filename = pathOUT + slash + Path.GetFileNameWithoutExtension(FileName) + ".output.txt";
-                    System.Diagnostics.ProcessStartInfo startInfo = new System.Diagnostics.ProcessStartInfo() { FileName = "/usr/bin/curlftpfs", Arguments = settings.ftpHost+settings.ftpPath+" /shared/  -o nonempty -o user="+settings.ftpUname+":"+settings.ftpPass, };
-                    System.Diagnostics.Process proc = new System.Diagnostics.Process() { StartInfo = startInfo, };
-                    proc.Start();
-		    proc.WaitForExit();
-                    System.Diagnostics.ProcessStartInfo startInfo7 = new System.Diagnostics.ProcessStartInfo() { FileName = "/usr/bin/rsync", Arguments = "-a /shared/ /Temp",};
-                    System.Diagnostics.Process proc7 = new System.Diagnostics.Process() { StartInfo = startInfo7, };
-                    proc7.Start();
-		    proc7.WaitForExit();
-                    Console.WriteLine("FTP connection successful.\n");	
+
+                    //Mount rclone remote
+		    if (settings.useRclone)
+		    {
+			try{	     
+	                      System.Diagnostics.ProcessStartInfo startInfo4 = new System.Diagnostics.ProcessStartInfo() { FileName = "/bin/fusermount", Arguments = "-u /shared", };
+                              System.Diagnostics.Process proc4 = new System.Diagnostics.Process() { StartInfo = startInfo4, };
+                              proc4.Start();
+			}
+			catch{}
+                      System.Diagnostics.ProcessStartInfo startInfo = new System.Diagnostics.ProcessStartInfo() { FileName = "/usr/bin/rclone", Arguments = "mount "+settings.RemoteMount +" /shared --allow-non-empty", };
+                      System.Diagnostics.Process proc = new System.Diagnostics.Process() { StartInfo = startInfo, };
+                      proc.Start();
+		      Console.WriteLine("That's fine, connecting to remote storage ...");
+		      Thread.Sleep(10000);
+		    }
+
+
+		    //Mount the FTP site provided by the user temporarily on /shared    (requires "apt install curlftpfs" one time in command line)
+		    if (settings.useFTP)                    
+		    {
+                      System.Diagnostics.ProcessStartInfo startInfo = new System.Diagnostics.ProcessStartInfo() { FileName = "/usr/bin/curlftpfs", Arguments = settings.ftpHost+settings.ftpPath+" /shared/  -o nonempty -o user="+settings.ftpUname+":"+settings.ftpPass, };
+                      System.Diagnostics.Process proc = new System.Diagnostics.Process() { StartInfo = startInfo, };
+                      proc.Start();
+		      proc.WaitForExit();
+		    }
+		    if (settings.useFTP)
+		    {
+                      System.Diagnostics.ProcessStartInfo startInfo7 = new System.Diagnostics.ProcessStartInfo() { FileName = "/usr/bin/rsync", Arguments = "-a /shared/ /Temp",};
+                      System.Diagnostics.Process proc7 = new System.Diagnostics.Process() { StartInfo = startInfo7, };
+                      proc7.Start();
+		      proc7.WaitForExit();
+                      Console.WriteLine("FTP connection successful.\n");	
+                    }
                     //System.Diagnostics.ProcessStartInfo startInfo6 = new System.Diagnostics.ProcessStartInfo() { FileName = "/bin/cp", Arguments = "/shared/"+settings.DataFileName+" /Temp/",};
                     //System.Diagnostics.Process proc6 = new System.Diagnostics.Process() { StartInfo = startInfo6, };
                     //proc6.Start();
@@ -1496,26 +1576,36 @@ namespace ClusterAlign
                         myMrcStack.Fexport(FileName, normout_filename, ref Dx_vect, ref Dy_vect, ref report_phi);
                     }
 
-
-                    Console.WriteLine("Uploading results to FTP folder");
-                    System.Diagnostics.ProcessStartInfo startInfo10 = new System.Diagnostics.ProcessStartInfo() { FileName = "/bin/rm", Arguments = "/Temp/"+settings.DataFileName,};
-                    System.Diagnostics.Process proc10 = new System.Diagnostics.Process() { StartInfo = startInfo10, };
-                    proc10.Start();
-                    proc10.WaitForExit();
-                    //connect to FTP again since probably expired
-                    System.Diagnostics.ProcessStartInfo startInfo9 = new System.Diagnostics.ProcessStartInfo() { FileName = "/usr/bin/curlftpfs", Arguments = settings.ftpHost+settings.ftpPath+" /shared/ -o nonempty -o user="+settings.ftpUname+":"+settings.ftpPass, };
-                    System.Diagnostics.Process proc9 = new System.Diagnostics.Process() { StartInfo = startInfo9, };
-                    proc9.Start();
-                    proc9.WaitForExit();
+			
+	            if (settings.useFTP )
+		    {
+                      Console.WriteLine("Uploading results");
+                      System.Diagnostics.ProcessStartInfo startInfo10 = new System.Diagnostics.ProcessStartInfo() { FileName = "/bin/rm", Arguments = "/Temp/"+settings.DataFileName,};
+                      System.Diagnostics.Process proc10 = new System.Diagnostics.Process() { StartInfo = startInfo10, };
+                      proc10.Start();
+                      proc10.WaitForExit();
+		    }
+	            if (settings.useFTP)
+	            {
+                      //connect to FTP again since probably expired
+                      System.Diagnostics.ProcessStartInfo startInfo9 = new System.Diagnostics.ProcessStartInfo() { FileName = "/usr/bin/curlftpfs", Arguments = settings.ftpHost+settings.ftpPath+" /shared/ -o nonempty -o user="+settings.ftpUname+":"+settings.ftpPass, };
+                      System.Diagnostics.Process proc9 = new System.Diagnostics.Process() { StartInfo = startInfo9, };
+                      proc9.Start();
+                      proc9.WaitForExit();
+		    }
                     //System.Diagnostics.ProcessStartInfo startInfo2 = new System.Diagnostics.ProcessStartInfo() { FileName = "/usr/bin/rsync", Arguments = "-a /Temp/ /shared",};
                     //System.Diagnostics.Process proc2 = new System.Diagnostics.Process() { StartInfo = startInfo2, };
                     //proc2.Start();
                     //proc2.WaitForExit();
-                    System.Diagnostics.ProcessStartInfo startInfo11 = new System.Diagnostics.ProcessStartInfo() { FileName = "/bin/bash", Arguments = "/ClusterAlign/cpresults", };
+                    if (settings.useFTP )
+		    {
+		    System.Diagnostics.ProcessStartInfo startInfo11 = new System.Diagnostics.ProcessStartInfo() { FileName = "/bin/bash", Arguments = "/ClusterAlign/cpresults", };
                     System.Diagnostics.Process proc11 = new System.Diagnostics.Process() { StartInfo = startInfo11, };
                     proc11.Start();
 		    proc11.WaitForExit();
+		    }
                }
+
 
                 Console.WriteLine("Alignment finished");
                 server.TryReceiveFrameString(new TimeSpan(1000), out msgzmq);

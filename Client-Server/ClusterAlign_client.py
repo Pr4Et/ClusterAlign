@@ -10,7 +10,7 @@
 #Use rclone config to configure a remote file system (example on AWS:  S3:<name of bucket>), then you should write below the path to the rclone.conf file that
 # contains your credentials in order to share your remote storage with your own the Docker container.
 #For running your docker container on the server use:
-# docker run -it --rm -p <server IP>:110:110 0525214954/clusteralign_server
+# docker run -it --rm -p <server IP>:110:110 --cap-add SYS_ADMIN --device /dev/fuse 0525214954/clusteralign_server
 #To access the server source code or run Octave scripts you can stop the docker container by Ctrl+C on the server side.
 #Article/citation: Seifer, S., & Elbaum, M. (2022). ClusterAlign: A fiducial tracking and tilt series alignment tool for thick sample tomography. Biological Imaging, 2, E7. doi:10.1017/S2633903X22000071
 
@@ -30,7 +30,7 @@ import win32api
 # In Amazon Linux command line: sudo yum install docker,  sudo systemctl start docker,
 # docker pull 0525214954/clusteralign_server:latest
 # nano .bashrc,   add the line:
-# docker run -it --rm -p 110:110 --privileged 0525214954/clusteralign_server
+# docker run -it --rm -p <server IP>:110:110 --privileged 0525214954/clusteralign_server
 # Stop the instance (to avoid charges).
 # Create Elastic IP (permanent address) and attach it to the instance.
 
@@ -38,12 +38,12 @@ context = zmq.Context()
 # Socket to talk to server
 socket = context.socket(zmq.REQ)
 # <<<<<< USER MANAGEABLE :
-socket.connect("tcp://132.77.57.166:110")  # write tcp://<IP of server>:110
+socket.connect("tcp://###.##.##.###:110")  # write tcp://<IP of server>:110
 useFileStorageType=2   #1- local folder on server,  2-remote folder set by rclone, 3-FTP server
 
 if useFileStorageType==3:
     # FTP connection parameters
-    ftpHost = '10.0.0.17' # Write IP of FTP server here or DNS name of your organization FTP
+    ftpHost = '##.#.#.##' # Write IP of FTP server here or DNS name of your organization FTP
     ftpUname = 'ftpuser'
     ftpPass = 'stem'
     ftpPath = '/clusteralign' # actual folder in server is /home/ftpuser' but we write '' if we are using default vsftpd settings

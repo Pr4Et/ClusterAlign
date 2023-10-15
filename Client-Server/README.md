@@ -12,7 +12,7 @@ The client program requires a shared directory, one of the following options:<br
 Installation of the docker container on the server (or your own computer) is achieved by a single docker command:<br />
 docker pull 0525214954/clusteralign_server:latest<br />
 Running the docker container on the server:<br />
-docker run -it --rm -p <server IP>:110:110 0525214954/clusteralign_server <br />
+docker run -it --rm -p <server IP>:110:110 --cap-add SYS_ADMIN --device /dev/fuse 0525214954/clusteralign_server <br />
 
 About<br />
 The docker image is adapated from ClusterAlign code, where EMGU-CV was replaced by OPENCVSHARP (https://github.com/shimat/opencvsharp), and installed with all prerequests in the docker image.<br />
